@@ -3,15 +3,30 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../context/AuthContext';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 // Screens
 import FeedScreen from '../screens/FeedScreen';
 import CharitiesScreen from '../screens/CharitiesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import CharityDetailScreen from '../screens/CharityDetailScreen';
+import WelcomeScreen from '../screens/WelcomeScreen';
+import SignInScreen from '../screens/SignInScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
+const AuthStack = createStackNavigator();
+
+// Authentication Stack
+const AuthNavigator = () => {
+  return (
+    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+      <AuthStack.Screen name="Welcome" component={WelcomeScreen} />
+      <AuthStack.Screen name="SignIn" component={SignInScreen} />
+    </AuthStack.Navigator>
+  );
+};
 
 // Charities Stack Navigator
 const CharitiesStack = () => {
@@ -102,9 +117,16 @@ const MainTabs = () => {
 };
 
 const AppNavigator = () => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  // Show loading screen while checking authentication
+  if (isLoading) {
+    return <LoadingSpinner text="Loading CharitEase..." />;
+  }
+
   return (
     <NavigationContainer>
-      <MainTabs />
+      {isAuthenticated ? <MainTabs /> : <AuthNavigator />}
     </NavigationContainer>
   );
 };

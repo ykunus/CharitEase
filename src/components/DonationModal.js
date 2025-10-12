@@ -135,12 +135,12 @@ const DonationModal = ({ visible, charity, onClose, onDonate }) => {
     const paymentOptions = [];
 
     // Always show Apple Pay option on iOS (will redirect to card if not available)
-    if (Platform.OS === 'ios') {
-      paymentOptions.push({
-        text: '🍎 Pay with Apple Pay',
-        onPress: handleApplePay,
-      });
-    }
+    // if (Platform.OS === 'ios') {
+    //   paymentOptions.push({
+    //     text: '🍎 Pay with Apple Pay',
+    //     onPress: handleApplePay,
+    //   });
+    // }
 
     paymentOptions.push({
       text: '💳 Pay with Card',
