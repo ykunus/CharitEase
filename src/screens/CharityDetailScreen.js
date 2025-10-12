@@ -142,7 +142,7 @@ const CharityDetailScreen = ({ route }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Our Impact</Text>
           <View style={styles.impactGrid}>
-            {Object.entries(charity.impact).map(([key, value], index) => {
+            {charity.impact && Object.entries(charity.impact).map(([key, value], index) => {
               const icons = ['people', 'school', 'medical', 'home'];
               const colors = ['#3B82F6', '#22C55E', '#EF4444', '#F59E0B'];
               const labels = {
@@ -172,11 +172,15 @@ const CharityDetailScreen = ({ route }) => {
                 communityProjects: 'Projects'
               };
               
-              return renderImpactMetric(
-                labels[key] || key,
-                formatNumber(value),
-                icons[index % icons.length],
-                colors[index % colors.length]
+              return (
+                <View key={key}>
+                  {renderImpactMetric(
+                    labels[key] || key,
+                    formatNumber(value),
+                    icons[index % icons.length],
+                    colors[index % colors.length]
+                  )}
+                </View>
               );
             })}
           </View>

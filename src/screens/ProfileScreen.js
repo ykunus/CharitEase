@@ -7,16 +7,18 @@ import {
   StyleSheet,
   SafeAreaView,
   RefreshControl,
-  Image
+  Image,
+  Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
+import { supabase } from '../config/supabase';
 
 const ProfileScreen = ({ navigation }) => {
-  const { user, donations, getCharityById, getFollowedCharitiesData } = useAuth();
+  const { user, donations, getCharityById, getFollowedCharitiesData, isConnected, signOut } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -38,6 +40,60 @@ const ProfileScreen = ({ navigation }) => {
 
   const handleBrowseCharities = () => {
     navigation.navigate('Charities');
+  };
+
+  const handleSignOut = async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Sign Out', 
+          style: 'destructive',
+          onPress: async () => {
+            await signOut();
+            // Navigation will be handled by the main app component
+          }
+        }
+      ]
+    );
+  };
+
+  const testDatabase = async () => {
+    try {
+      // Test 1: Check users table
+      const { data: users, error: usersError } = await supabase
+        .from('users')
+        .select('count')
+        .limit(1);
+
+      // Test 2: Check charities table
+      const { data: charities, error: charitiesError } = await supabase
+        .from('charities')
+        .select('name, country')
+        .limit(3);
+
+      // Test 3: Check posts table
+      const { data: posts, error: postsError } = await supabase
+        .from('posts')
+        .select('title, type')
+        .limit(3);
+
+      if (usersError || charitiesError || postsError) {
+        Alert.alert(
+          '❌ Database Test Failed',
+          `Users: ${usersError?.message || 'OK'}\nCharities: ${charitiesError?.message || 'OK'}\nPosts: ${postsError?.message || 'OK'}`
+        );
+      } else {
+        Alert.alert(
+          '✅ Database Test Successful!',
+          `✅ Users: ${users[0]?.count || 0} records\n✅ Charities: ${charities.length} records\n✅ Posts: ${posts.length} records\n\nDatabase is working perfectly!`
+        );
+      }
+    } catch (error) {
+      Alert.alert('❌ Database Connection Failed', error.message);
+    }
   };
 
   const renderStatsCard = (title, value, icon, color) => (
@@ -103,6 +159,16 @@ const ProfileScreen = ({ navigation }) => {
               year: 'numeric' 
             })}
           </Text>
+          <View style={styles.connectionStatus}>
+            <Ionicons 
+              name={isConnected ? "checkmark-circle" : "alert-circle"} 
+              size={16} 
+              color={isConnected ? "#22C55E" : "#F59E0B"} 
+            />
+            <Text style={[styles.connectionText, { color: isConnected ? "#22C55E" : "#F59E0B" }]}>
+              {isConnected ? "Database Connected" : "Using Demo Data"}
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -110,19 +176,19 @@ const ProfileScreen = ({ navigation }) => {
       <View style={styles.statsContainer}>
         {renderStatsCard(
           'Total Donated',
-          formatCurrency(user.totalDonated),
+          formatCurrency(user.totalDonated || 0),
           'heart',
           '#EF4444'
         )}
         {renderStatsCard(
           'Charities Followed',
-          user.followedCharities.length.toString(),
+          (user.followedCharities?.length || 0).toString(),
           'people',
           '#3B82F6'
         )}
         {renderStatsCard(
           'Donations Made',
-          user.totalDonations.toString(),
+          (user.totalDonations || 0).toString(),
           'gift',
           '#22C55E'
         )}
@@ -145,6 +211,16 @@ const ProfileScreen = ({ navigation }) => {
           <Text style={styles.actionText}>View Feed</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Sign Out Button */}
+      <TouchableOpacity 
+        style={styles.signOutButton}
+        onPress={handleSignOut}
+      >
+        <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+        <Text style={styles.signOutText}>Sign Out</Text>
+      </TouchableOpacity>
+
     </View>
   );
 
@@ -154,7 +230,7 @@ const ProfileScreen = ({ navigation }) => {
     </View>
   );
 
-  if (loading) {
+  if (loading || !user) {
     return <LoadingSpinner text="Loading profile..." />;
   }
 
@@ -238,6 +314,16 @@ const styles = StyleSheet.create({
   userJoined: {
     fontSize: 14,
     color: '#9CA3AF',
+    marginBottom: 8,
+  },
+  connectionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  connectionText: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
   },
   statsContainer: {
     marginBottom: 24,
@@ -286,6 +372,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#3B82F6',
+  },
+  signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    marginTop: 12,
+  },
+  signOutText: {
+    marginLeft: 8,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#EF4444',
   },
   sectionHeader: {
     paddingHorizontal: 16,
