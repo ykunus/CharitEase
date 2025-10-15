@@ -17,7 +17,7 @@ app.get('/health', (req, res) => {
 
 app.post('/create-payment-intent', async (req, res) => {
   try {
-    const { amount, payment_method_types = ['card'] } = req.body;
+    const { amount } = req.body;
 
     if (!amount || amount < 50) { // Stripe minimum is $0.50
       return res.status(400).json({
@@ -31,7 +31,6 @@ app.post('/create-payment-intent', async (req, res) => {
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amount, // Amount in cents
       currency: 'usd',
-      payment_method_types: payment_method_types,
       automatic_payment_methods: {
         enabled: true,
       },
