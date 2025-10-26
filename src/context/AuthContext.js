@@ -280,6 +280,26 @@ export const AuthProvider = ({ children }) => {
         email,
         name: userType === 'charity' ? (additionalData.charityName || name) : name,
         country,
+        bio: additionalData.bio || '',
+        avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+        totalDonated: 0,
+        totalDonations: 0,
+        joinedDate: new Date().toISOString(),
+        userType,
+        followedCharities: [],
+        // Charity-specific fields
+        ...(userType === 'charity' && {
+          mission: additionalData.mission || '',
+          website: additionalData.website || '',
+          phone: additionalData.phone || '',
+          address: additionalData.address || '',
+          foundedYear: additionalData.foundedYear || new Date().getFullYear(),
+          category: additionalData.category || 'General',
+          verified: false,
+          totalRaised: 0,
+          followers: 0
+        })
+      };
 
       await AsyncStorage.setItem('demoUser', JSON.stringify(tempUser));
       setUser(tempUser);
