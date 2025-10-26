@@ -41,7 +41,14 @@ export const AuthProvider = ({ children }) => {
         // Check AsyncStorage for demo user
         const demoUser = await AsyncStorage.getItem('demoUser');
         if (demoUser) {
-          setUser(JSON.parse(demoUser));
+          const parsed = JSON.parse(demoUser);
+          const fallbackFollowed = Array.isArray(parsed.followedCharities) ? parsed.followedCharities : [];
+
+          setUser({
+            ...parsed,
+            followedCharities: fallbackFollowed
+          });
+          setFollowedCharities(fallbackFollowed);
           setIsAuthenticated(true);
         }
       }
@@ -115,7 +122,16 @@ export const AuthProvider = ({ children }) => {
       // Fallback to demo user if database fails
       const demoUser = await AsyncStorage.getItem('demoUser');
       if (demoUser) {
-        setUser(JSON.parse(demoUser));
+        const parsedUser = JSON.parse(demoUser);
+        const fallbackFollowed = Array.isArray(parsedUser.followedCharities)
+          ? parsedUser.followedCharities
+          : [];
+
+        setUser({
+          ...parsedUser,
+          followedCharities: fallbackFollowed
+        });
+        setFollowedCharities(fallbackFollowed);
         setIsAuthenticated(true);
       }
     }
@@ -188,15 +204,17 @@ export const AuthProvider = ({ children }) => {
         email,
         name,
         country,
-        avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-        totalDonated: 0,
-        totalDonations: 0,
-        joinedDate: new Date().toISOString(),
-        userType
-      };
+      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+      totalDonated: 0,
+      totalDonations: 0,
+      joinedDate: new Date().toISOString(),
+      userType,
+      followedCharities: []
+    };
 
       await AsyncStorage.setItem('demoUser', JSON.stringify(tempUser));
       setUser(tempUser);
+      setFollowedCharities([]);
       setIsAuthenticated(true);
 
       return data;
@@ -243,19 +261,31 @@ export const AuthProvider = ({ children }) => {
   };
 
   const followCharity = (charityId) => {
-    if (followedCharities.includes(charityId)) {
-      setFollowedCharities(prev => prev.filter(id => id !== charityId));
-      setUser(prev => ({
-        ...prev,
-        followedCharities: prev.followedCharities.filter(id => id !== charityId)
-      }));
-    } else {
-      setFollowedCharities(prev => [...prev, charityId]);
-      setUser(prev => ({
-        ...prev,
-        followedCharities: [...prev.followedCharities, charityId]
-      }));
-    }
+    setFollowedCharities((prev) => {
+      const currentFollowed = Array.isArray(prev) ? prev : [];
+      const isFollowing = currentFollowed.includes(charityId);
+      const updatedFollowed = isFollowing
+        ? currentFollowed.filter((id) => id !== charityId)
+        : [...currentFollowed, charityId];
+
+      setUser((prevUser) => {
+        if (!prevUser) return prevUser;
+
+        const userFollowed = Array.isArray(prevUser.followedCharities)
+          ? prevUser.followedCharities
+          : [];
+        const nextUserFollowed = isFollowing
+          ? userFollowed.filter((id) => id !== charityId)
+          : [...userFollowed.filter((id) => id !== charityId), charityId];
+
+        return {
+          ...prevUser,
+          followedCharities: nextUserFollowed
+        };
+      });
+
+      return updatedFollowed;
+    });
   };
 
   const makeDonation = (charityId, amount, message) => {
