@@ -14,6 +14,7 @@ import { userProfile } from '../data/demoData';
 import PostCard from '../components/PostCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
+import { calculateDistanceKm, kmToMiles } from '../utils/geo';
 
 const TAB_CONFIG = [
   { key: 'following', label: 'Following', icon: 'heart-outline' },
@@ -21,28 +22,10 @@ const TAB_CONFIG = [
   { key: 'local', label: 'Local', icon: 'location-outline' }
 ];
 
-const MIN_DISTANCE = 10;
-const MAX_DISTANCE = 500;
-const DISTANCE_STEP = 25;
-
-const calculateDistanceKm = (from, to) => {
-  if (!from || !to) return null;
-
-  const toRad = (value) => (value * Math.PI) / 180;
-  const earthRadiusKm = 6371;
-
-  const dLat = toRad(to.latitude - from.latitude);
-  const dLon = toRad(to.longitude - from.longitude);
-  const lat1 = toRad(from.latitude);
-  const lat2 = toRad(to.latitude);
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return earthRadiusKm * c;
-};
+const MIN_DISTANCE = 5; // miles
+const MAX_DISTANCE = 300; // miles
+const DISTANCE_STEP = 10; // miles
+const DEFAULT_DISTANCE_MILES = 60;
 
 const FeedScreen = ({ navigation }) => {
   const {
@@ -56,7 +39,7 @@ const FeedScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedTab, setSelectedTab] = useState('following');
-  const [distance, setDistance] = useState(100);
+  const [distance, setDistance] = useState(DEFAULT_DISTANCE_MILES);
 
   const userLocation = user?.location || userProfile.location;
 
@@ -115,7 +98,8 @@ const FeedScreen = ({ navigation }) => {
         return;
       }
 
-      const distanceToCharity = calculateDistanceKm(userLocation, charity.location);
+      const distanceKm = calculateDistanceKm(userLocation, charity.location);
+      const distanceToCharity = kmToMiles(distanceKm);
       if (distanceToCharity === null || distanceToCharity > distance) {
         return;
       }
@@ -142,10 +126,7 @@ const FeedScreen = ({ navigation }) => {
 
   const formatDistance = (value) => {
     if (value == null) return '';
-    if (value < 1) {
-      return `${Math.round(value * 1000)} m away`;
-    }
-    return `${value.toFixed(value < 10 ? 1 : 0)} km away`;
+    return `${value.toFixed(value < 10 ? 1 : 0)} mi away`;
   };
 
   const activePosts = useMemo(() => {
@@ -242,7 +223,7 @@ const FeedScreen = ({ navigation }) => {
       <EmptyState
         icon="location-outline"
         title="No local updates yet"
-        message={`Try expanding your search radius to see more charity updates within ${distance} km.`}
+        message={`Try expanding your search radius to see more charity updates within ${distance} miles.`}
         actionText="Increase Distance"
         onAction={() => handleDistanceChange(DISTANCE_STEP)}
       />
@@ -265,7 +246,7 @@ const FeedScreen = ({ navigation }) => {
         }
         return {
           title: 'Local Impact',
-          subtitle: `Charity stories within ${distance} km of you`
+          subtitle: `Charity stories within ${distance} miles of you`
         };
       case 'following':
       default:
@@ -306,24 +287,21 @@ const FeedScreen = ({ navigation }) => {
 
     return (
       <View style={styles.distanceContainer}>
-        <Text style={styles.distanceLabel}>
-          Showing charities within {distance} km
-        </Text>
-        <View style={styles.distanceControls}>
-          <TouchableOpacity
-            style={styles.distanceButton}
-            onPress={() => handleDistanceChange(-DISTANCE_STEP)}
-          >
-            <Ionicons name="remove-outline" size={18} color="#1F2937" />
-          </TouchableOpacity>
-          <Text style={styles.distanceValue}>{distance} km</Text>
-          <TouchableOpacity
-            style={styles.distanceButton}
-            onPress={() => handleDistanceChange(DISTANCE_STEP)}
-          >
-            <Ionicons name="add-outline" size={18} color="#1F2937" />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={styles.mapButton}
+          onPress={() =>
+            navigation.navigate('LocalCharityMap', {
+              radius: distance,
+              location: userLocation,
+            })
+          }
+        >
+          <View style={styles.mapButtonContent}>
+            <Ionicons name="map-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.mapButtonLabel}>View Nearby Charities on Map</Text>
+          </View>
+          <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+        </TouchableOpacity>
       </View>
     );
   };
@@ -465,6 +443,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#1F2937',
+  },
+  mapButton: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  mapButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  mapButtonLabel: {
+    marginLeft: 10,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   postWrapper: {
     marginTop: 12,

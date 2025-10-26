@@ -14,9 +14,11 @@ import CharityDetailScreen from '../screens/CharityDetailScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import SignInScreen from '../screens/SignInScreen';
 import CharityAdminScreen from '../screens/CharityAdminScreen';
+import LocalCharityMapScreen from '../screens/LocalCharityMapScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
+const FeedStack = createStackNavigator();
 const AuthStack = createStackNavigator();
 
 // Authentication Stack
@@ -27,6 +29,28 @@ const AuthNavigator = () => {
       <AuthStack.Screen name="SignIn" component={SignInScreen} />
       <AuthStack.Screen name="CharityAdmin" component={CharityAdminScreen} />
     </AuthStack.Navigator>
+  );
+};
+
+const FeedStackNavigator = () => {
+  return (
+    <FeedStack.Navigator>
+      <FeedStack.Screen
+        name="FeedHome"
+        component={FeedScreen}
+        options={{ headerShown: false }}
+      />
+      <FeedStack.Screen
+        name="LocalCharityMap"
+        component={LocalCharityMapScreen}
+        options={{
+          headerBackTitleVisible: false,
+          headerTintColor: '#1F2937',
+          headerStyle: { backgroundColor: '#FFFFFF' },
+          headerTitleStyle: { fontWeight: '600' },
+        }}
+      />
+    </FeedStack.Navigator>
   );
 };
 
@@ -98,7 +122,7 @@ const MainTabs = () => {
     >
       <Tab.Screen 
         name="Feed" 
-        component={FeedScreen}
+        component={FeedStackNavigator}
         options={{
           tabBarLabel: isCharity ? 'Posts' : 'Feed',
         }}
