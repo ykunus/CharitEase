@@ -153,8 +153,32 @@ const ProfileScreen = ({ navigation }) => {
         <View style={styles.profileInfo}>
           <Text style={styles.userName}>{user.name}</Text>
           <Text style={styles.userCountry}>{user.country}</Text>
+          {user.bio && (
+            <Text style={styles.userBio}>{user.bio}</Text>
+          )}
+          {user.userType === 'charity' && (
+            <>
+              <Text style={styles.charityMission}>{user.mission}</Text>
+              <View style={styles.charityDetails}>
+                {user.website && (
+                  <Text style={styles.charityDetail}>🌐 {user.website}</Text>
+                )}
+                {user.phone && (
+                  <Text style={styles.charityDetail}>📞 {user.phone}</Text>
+                )}
+                {user.address && (
+                  <Text style={styles.charityDetail}>📍 {user.address}</Text>
+                )}
+                <Text style={styles.charityDetail}>📅 Founded {user.foundedYear}</Text>
+                <Text style={styles.charityDetail}>🏷️ {user.category}</Text>
+                <Text style={styles.charityDetail}>
+                  {user.verified ? '✅ Verified Charity' : '⏳ Pending Verification'}
+                </Text>
+              </View>
+            </>
+          )}
           <Text style={styles.userJoined}>
-            Member since {new Date(user.joinedDate).toLocaleDateString('en-US', { 
+            {user.userType === 'charity' ? 'Charity' : 'Member'} since {new Date(user.joinedDate).toLocaleDateString('en-US', { 
               month: 'long', 
               year: 'numeric' 
             })}
@@ -174,23 +198,48 @@ const ProfileScreen = ({ navigation }) => {
 
       {/* Stats Cards */}
       <View style={styles.statsContainer}>
-        {renderStatsCard(
-          'Total Donated',
-          formatCurrency(user.totalDonated || 0),
-          'heart',
-          '#EF4444'
-        )}
-        {renderStatsCard(
-          'Charities Followed',
-          (user.followedCharities?.length || 0).toString(),
-          'people',
-          '#3B82F6'
-        )}
-        {renderStatsCard(
-          'Donations Made',
-          (user.totalDonations || 0).toString(),
-          'gift',
-          '#22C55E'
+        {user.userType === 'charity' ? (
+          <>
+            {renderStatsCard(
+              'Total Raised',
+              formatCurrency(user.totalRaised || 0),
+              'trending-up',
+              '#22C55E'
+            )}
+            {renderStatsCard(
+              'Followers',
+              (user.followers || 0).toString(),
+              'people',
+              '#3B82F6'
+            )}
+            {renderStatsCard(
+              'Category',
+              user.category || 'General',
+              'tag',
+              '#8B5CF6'
+            )}
+          </>
+        ) : (
+          <>
+            {renderStatsCard(
+              'Total Donated',
+              formatCurrency(user.totalDonated || 0),
+              'heart',
+              '#EF4444'
+            )}
+            {renderStatsCard(
+              'Charities Followed',
+              (user.followedCharities?.length || 0).toString(),
+              'people',
+              '#3B82F6'
+            )}
+            {renderStatsCard(
+              'Donations Made',
+              (user.totalDonations || 0).toString(),
+              'gift',
+              '#22C55E'
+            )}
+          </>
         )}
       </View>
 
@@ -315,6 +364,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9CA3AF',
     marginBottom: 8,
+  },
+  userBio: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 8,
+    fontStyle: 'italic',
+  },
+  charityMission: {
+    fontSize: 14,
+    color: '#374151',
+    marginBottom: 8,
+    fontStyle: 'italic',
+  },
+  charityDetails: {
+    marginBottom: 8,
+  },
+  charityDetail: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 2,
   },
   connectionStatus: {
     flexDirection: 'row',

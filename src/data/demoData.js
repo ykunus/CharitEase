@@ -121,11 +121,13 @@ export const userProfile = {
   id: 'user1',
   name: 'Demo User',
   country: 'Syria',
+  bio: 'Passionate about making a difference in the world through charitable giving.',
   avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-  totalDonated: 575,
-  totalDonations: 5,
-  followedCharities: ['1', '2', '4'],
-  joinedDate: '2023-01-15'
+  totalDonated: 0, // Reset for new users
+  totalDonations: 0, // Reset for new users
+  followedCharities: [], // Reset for new users
+  joinedDate: '2023-01-15',
+  userType: 'user'
 };
 
 export const donationHistory = [

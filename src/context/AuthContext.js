@@ -54,60 +54,102 @@ export const AuthProvider = ({ children }) => {
 
   const loadUserProfile = async (supabaseUser) => {
     try {
-      // Try to get user profile from database
-      const { data: profile, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', supabaseUser.email)
-        .single();
+      // Determine user type from metadata
+      const userType = supabaseUser.user_metadata?.userType || 'user';
+      
+      if (userType === 'charity') {
+        // Load charity profile
+        const { data: charityProfile, error } = await supabase
+          .from('charities')
+          .select('*')
+          .eq('email', supabaseUser.email)
+          .single();
 
-      if (profile) {
+        if (charityProfile) {
+          setUser({
+            id: supabaseUser.id,
+            email: supabaseUser.email,
+            name: charityProfile.name,
+            country: charityProfile.country,
+            bio: charityProfile.mission || '',
+            avatar: charityProfile.logo_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+            totalDonated: 0, // Charities don't donate
+            totalDonations: 0,
+            followedCharities: [],
+            joinedDate: charityProfile.created_at || new Date().toISOString(),
+            userType: 'charity',
+            mission: charityProfile.mission || '',
+            website: charityProfile.website || '',
+            phone: charityProfile.phone || '',
+            address: charityProfile.address || '',
+            foundedYear: charityProfile.founded_year || new Date().getFullYear(),
+            category: charityProfile.category || 'General',
+            verified: charityProfile.verified || false,
+            totalRaised: charityProfile.total_raised || 0,
+            followers: charityProfile.followers || 0
+          });
+          setIsAuthenticated(true);
+          setIsConnected(true);
+        }
+      } else {
+        // Load regular user profile
+        const { data: profile, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', supabaseUser.email)
+          .single();
+
+        if (profile) {
           setUser({
             id: supabaseUser.id,
             email: supabaseUser.email,
             name: profile.name,
             country: profile.country,
+            bio: profile.bio || '',
             avatar: profile.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
             totalDonated: profile.total_donated || 0,
             totalDonations: profile.total_donations || 0,
             followedCharities: profile.followed_charities || [],
             joinedDate: profile.created_at || new Date().toISOString(),
-            userType: 'user' // Default to user for now
-          });
-        setIsAuthenticated(true);
-        setIsConnected(true);
-      } else {
-        // Create profile if it doesn't exist
-        const newProfile = {
-          email: supabaseUser.email,
-          name: supabaseUser.user_metadata?.name || 'User',
-          country: supabaseUser.user_metadata?.country || 'Unknown',
-          avatar_url: null,
-          total_donated: 0,
-          total_donations: 0
-        };
-
-        const { data: createdProfile, error: createError } = await supabase
-          .from('users')
-          .insert([newProfile])
-          .select()
-          .single();
-
-        if (createdProfile) {
-          setUser({
-            id: supabaseUser.id,
-            email: supabaseUser.email,
-            name: createdProfile.name,
-            country: createdProfile.country,
-            avatar: createdProfile.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-            totalDonated: 0,
-            totalDonations: 0,
-            followedCharities: [],
-            joinedDate: createdProfile.created_at,
             userType: 'user'
           });
           setIsAuthenticated(true);
           setIsConnected(true);
+        } else {
+          // Create profile if it doesn't exist
+          const newProfile = {
+            email: supabaseUser.email,
+            name: supabaseUser.user_metadata?.name || 'User',
+            country: supabaseUser.user_metadata?.country || 'Unknown',
+            bio: supabaseUser.user_metadata?.bio || '',
+            avatar_url: null,
+            total_donated: 0,
+            total_donations: 0
+          };
+
+          const { data: createdProfile, error: createError } = await supabase
+            .from('users')
+            .insert([newProfile])
+            .select()
+            .single();
+
+          if (createdProfile) {
+            setUser({
+              id: supabaseUser.id,
+              email: supabaseUser.email,
+              name: createdProfile.name,
+              country: createdProfile.country,
+              bio: createdProfile.bio || '',
+              avatar: createdProfile.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+              totalDonated: 0,
+              totalDonations: 0,
+              followedCharities: [],
+              joinedDate: createdProfile.created_at,
+              userType: 'user'
+            });
+            setIsAuthenticated(true);
+            setIsConnected(true);
+          }
         }
       }
     } catch (error) {
@@ -143,7 +185,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const signUp = async ({ email, password, name, country, userType }) => {
+  const signUp = async ({ email, password, name, country, userType, ...additionalData }) => {
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -152,33 +194,67 @@ export const AuthProvider = ({ children }) => {
           data: {
             name,
             country,
-            userType
+            userType,
+            ...additionalData
           }
         }
       });
 
       if (error) throw error;
 
-      // If user was created successfully, create their profile in the users table
+      // If user was created successfully, create their profile in the appropriate table
       if (data.user) {
-        const newProfile = {
-          id: data.user.id,
-          email: data.user.email,
-          name: name,
-          country: country,
-          avatar_url: null,
-          total_donated: 0,
-          total_donations: 0
-        };
+        if (userType === 'charity') {
+          // Create charity profile
+          const charityProfile = {
+            id: data.user.id,
+            email: data.user.email,
+            name: additionalData.charityName || name,
+            country: country,
+            mission: additionalData.mission || '',
+            website: additionalData.website || '',
+            phone: additionalData.phone || '',
+            address: additionalData.address || '',
+            founded_year: additionalData.foundedYear || new Date().getFullYear(),
+            category: additionalData.category || 'General',
+            logo_url: null,
+            cover_image_url: null,
+            verified: false,
+            total_raised: 0,
+            followers: 0
+          };
 
-        const { data: createdProfile, error: createError } = await supabase
-          .from('users')
-          .insert([newProfile])
-          .select()
-          .single();
+          const { data: createdCharity, error: createError } = await supabase
+            .from('charities')
+            .insert([charityProfile])
+            .select()
+            .single();
 
-        if (createError) {
-          console.log('Profile creation error:', createError);
+          if (createError) {
+            console.log('Charity profile creation error:', createError);
+          }
+        } else {
+          // Create regular user profile
+          const newProfile = {
+            id: data.user.id,
+            email: data.user.email,
+            name: name,
+            country: country,
+            bio: additionalData.bio || '',
+            avatar_url: null,
+            total_donated: 0,
+            total_donations: 0
+          };
+
+          const { data: createdProfile, error: createError } = await supabase
+            .from('users')
+            .insert([newProfile])
+            .select()
+            .single();
+
+          if (createError) {
+            console.log('Profile creation error:', createError);
+          }
         }
       }
 
@@ -186,13 +262,26 @@ export const AuthProvider = ({ children }) => {
       const tempUser = {
         id: data.user?.id || 'temp',
         email,
-        name,
+        name: userType === 'charity' ? (additionalData.charityName || name) : name,
         country,
+        bio: additionalData.bio || '',
         avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
         totalDonated: 0,
         totalDonations: 0,
         joinedDate: new Date().toISOString(),
-        userType
+        userType,
+        // Charity-specific fields
+        ...(userType === 'charity' && {
+          mission: additionalData.mission || '',
+          website: additionalData.website || '',
+          phone: additionalData.phone || '',
+          address: additionalData.address || '',
+          foundedYear: additionalData.foundedYear || new Date().getFullYear(),
+          category: additionalData.category || 'General',
+          verified: false,
+          totalRaised: 0,
+          followers: 0
+        })
       };
 
       await AsyncStorage.setItem('demoUser', JSON.stringify(tempUser));

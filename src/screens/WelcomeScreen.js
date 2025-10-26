@@ -58,8 +58,17 @@ const WelcomeScreen = ({ navigation }) => {
             onPress={() => navigation.navigate('SignIn', { userType: 'charity' })}
           >
             <Ionicons name="heart" size={24} color="#FFFFFF" />
-            <Text style={styles.authButtonText}>Sign In as Charity</Text>
-            <Text style={styles.authButtonSubtext}>Share your impact and mission</Text>
+            <Text style={styles.authButtonText}>Sign Up as Charity</Text>
+            <Text style={styles.authButtonSubtext}>Create charity account</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.authButton, styles.adminButton]}
+            onPress={() => navigation.navigate('CharityAdmin')}
+          >
+            <Ionicons name="shield" size={24} color="#FFFFFF" />
+            <Text style={styles.authButtonText}>Charity Admin Login</Text>
+            <Text style={styles.authButtonSubtext}>Access existing charity account</Text>
           </TouchableOpacity>
         </View>
 
@@ -160,6 +169,9 @@ const styles = StyleSheet.create({
   },
   charityButton: {
     backgroundColor: '#22C55E',
+  },
+  adminButton: {
+    backgroundColor: '#8B5CF6',
   },
   authButtonText: {
     fontSize: 18,
