@@ -13,6 +13,7 @@ import ProfileScreen from '../screens/ProfileScreen';
 import CharityDetailScreen from '../screens/CharityDetailScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import SignInScreen from '../screens/SignInScreen';
+import CharityAdminScreen from '../screens/CharityAdminScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -24,6 +25,7 @@ const AuthNavigator = () => {
     <AuthStack.Navigator screenOptions={{ headerShown: false }}>
       <AuthStack.Screen name="Welcome" component={WelcomeScreen} />
       <AuthStack.Screen name="SignIn" component={SignInScreen} />
+      <AuthStack.Screen name="CharityAdmin" component={CharityAdminScreen} />
     </AuthStack.Navigator>
   );
 };
@@ -57,6 +59,9 @@ const CharitiesStack = () => {
 
 // Main Tab Navigator
 const MainTabs = () => {
+  const { user } = useAuth();
+  const isCharity = user?.userType === 'charity';
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -73,7 +78,7 @@ const MainTabs = () => {
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#3B82F6',
+        tabBarActiveTintColor: isCharity ? '#22C55E' : '#3B82F6',
         tabBarInactiveTintColor: '#6B7280',
         tabBarStyle: {
           backgroundColor: '#FFFFFF',
@@ -95,21 +100,23 @@ const MainTabs = () => {
         name="Feed" 
         component={FeedScreen}
         options={{
-          tabBarLabel: 'Feed',
+          tabBarLabel: isCharity ? 'Posts' : 'Feed',
         }}
       />
-      <Tab.Screen 
-        name="Charities" 
-        component={CharitiesStack}
-        options={{
-          tabBarLabel: 'Charities',
-        }}
-      />
+      {!isCharity && (
+        <Tab.Screen 
+          name="Charities" 
+          component={CharitiesStack}
+          options={{
+            tabBarLabel: 'Charities',
+          }}
+        />
+      )}
       <Tab.Screen 
         name="Profile" 
         component={ProfileScreen}
         options={{
-          tabBarLabel: 'Profile',
+          tabBarLabel: isCharity ? 'Charity Profile' : 'Profile',
         }}
       />
     </Tab.Navigator>

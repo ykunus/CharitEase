@@ -26,7 +26,16 @@ const SignInScreen = ({ navigation, route }) => {
     password: '',
     name: '',
     country: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    bio: '',
+    // Charity-specific fields
+    charityName: '',
+    mission: '',
+    website: '',
+    phone: '',
+    address: '',
+    foundedYear: new Date().getFullYear(),
+    category: 'General'
   });
 
   // Refs for input focus
@@ -35,6 +44,12 @@ const SignInScreen = ({ navigation, route }) => {
   const emailInputRef = useRef(null);
   const passwordInputRef = useRef(null);
   const confirmPasswordInputRef = useRef(null);
+  const bioInputRef = useRef(null);
+  const charityNameInputRef = useRef(null);
+  const missionInputRef = useRef(null);
+  const websiteInputRef = useRef(null);
+  const phoneInputRef = useRef(null);
+  const addressInputRef = useRef(null);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -47,10 +62,18 @@ const SignInScreen = ({ navigation, route }) => {
     }
 
     if (isSignUp) {
-      if (!formData.name || !formData.country) {
-        Alert.alert('Error', 'Please fill in all required fields');
-        return false;
+      if (userType === 'charity') {
+        if (!formData.charityName || !formData.country || !formData.mission) {
+          Alert.alert('Error', 'Please fill in all required fields for charity registration');
+          return false;
+        }
+      } else {
+        if (!formData.name || !formData.country) {
+          Alert.alert('Error', 'Please fill in all required fields');
+          return false;
+        }
       }
+      
       if (formData.password !== formData.confirmPassword) {
         Alert.alert('Error', 'Passwords do not match');
         return false;
@@ -70,13 +93,27 @@ const SignInScreen = ({ navigation, route }) => {
     setLoading(true);
     try {
       if (isSignUp) {
-        await signUp({
+        const signUpData = {
           email: formData.email,
           password: formData.password,
-          name: formData.name,
+          name: userType === 'charity' ? formData.charityName : formData.name,
           country: formData.country,
-          userType
-        });
+          userType,
+          bio: formData.bio
+        };
+
+        // Add charity-specific fields
+        if (userType === 'charity') {
+          signUpData.charityName = formData.charityName;
+          signUpData.mission = formData.mission;
+          signUpData.website = formData.website;
+          signUpData.phone = formData.phone;
+          signUpData.address = formData.address;
+          signUpData.foundedYear = formData.foundedYear;
+          signUpData.category = formData.category;
+        }
+
+        await signUp(signUpData);
         Alert.alert('Success', 'Account created successfully!');
       } else {
         await signIn({
@@ -97,7 +134,15 @@ const SignInScreen = ({ navigation, route }) => {
       password: '',
       name: '',
       country: '',
-      confirmPassword: ''
+      confirmPassword: '',
+      bio: '',
+      charityName: '',
+      mission: '',
+      website: '',
+      phone: '',
+      address: '',
+      foundedYear: new Date().getFullYear(),
+      category: 'General'
     });
   };
 
@@ -136,52 +181,225 @@ const SignInScreen = ({ navigation, route }) => {
           <View style={styles.form}>
             {isSignUp && (
               <>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Full Name</Text>
-                  <Pressable onPress={() => nameInputRef.current?.focus()}>
-                    <TextInput
-                      ref={nameInputRef}
-                      style={styles.input}
-                      value={formData.name}
-                      onChangeText={(value) => handleInputChange('name', value)}
-                      placeholder="Enter your full name"
-                      placeholderTextColor="#9CA3AF"
-                      autoCapitalize="words"
-                      autoComplete="off"
-                      textContentType="none"
-                      spellCheck={false}
-                      autoCorrect={false}
-                      importantForAutofill="no"
-                      autoFocus={true}
-                      returnKeyType="next"
-                      blurOnSubmit={false}
-                      onSubmitEditing={() => countryInputRef.current?.focus()}
-                    />
-                  </Pressable>
-                </View>
+                {userType === 'charity' ? (
+                  <>
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Charity Name *</Text>
+                      <Pressable onPress={() => charityNameInputRef.current?.focus()}>
+                        <TextInput
+                          ref={charityNameInputRef}
+                          style={styles.input}
+                          value={formData.charityName}
+                          onChangeText={(value) => handleInputChange('charityName', value)}
+                          placeholder="Enter charity name"
+                          placeholderTextColor="#9CA3AF"
+                          autoCapitalize="words"
+                          autoComplete="off"
+                          textContentType="none"
+                          spellCheck={false}
+                          autoCorrect={false}
+                          importantForAutofill="no"
+                          autoFocus={true}
+                          returnKeyType="next"
+                          blurOnSubmit={false}
+                          onSubmitEditing={() => countryInputRef.current?.focus()}
+                        />
+                      </Pressable>
+                    </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Country</Text>
-                  <Pressable onPress={() => countryInputRef.current?.focus()}>
-                    <TextInput
-                      ref={countryInputRef}
-                      style={styles.input}
-                      value={formData.country}
-                      onChangeText={(value) => handleInputChange('country', value)}
-                      placeholder="e.g., Syria, Lebanon, Afghanistan"
-                      placeholderTextColor="#9CA3AF"
-                      autoCapitalize="words"
-                      autoComplete="off"
-                      textContentType="none"
-                      spellCheck={false}
-                      autoCorrect={false}
-                      importantForAutofill="no"
-                      returnKeyType="next"
-                      blurOnSubmit={false}
-                      onSubmitEditing={() => emailInputRef.current?.focus()}
-                    />
-                  </Pressable>
-                </View>
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Country *</Text>
+                      <Pressable onPress={() => countryInputRef.current?.focus()}>
+                        <TextInput
+                          ref={countryInputRef}
+                          style={styles.input}
+                          value={formData.country}
+                          onChangeText={(value) => handleInputChange('country', value)}
+                          placeholder="e.g., Syria, Lebanon, Afghanistan"
+                          placeholderTextColor="#9CA3AF"
+                          autoCapitalize="words"
+                          autoComplete="off"
+                          textContentType="none"
+                          spellCheck={false}
+                          autoCorrect={false}
+                          importantForAutofill="no"
+                          returnKeyType="next"
+                          blurOnSubmit={false}
+                          onSubmitEditing={() => missionInputRef.current?.focus()}
+                        />
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Mission Statement *</Text>
+                      <Pressable onPress={() => missionInputRef.current?.focus()}>
+                        <TextInput
+                          ref={missionInputRef}
+                          style={[styles.input, styles.textArea]}
+                          value={formData.mission}
+                          onChangeText={(value) => handleInputChange('mission', value)}
+                          placeholder="Describe your charity's mission and goals"
+                          placeholderTextColor="#9CA3AF"
+                          autoCapitalize="sentences"
+                          autoComplete="off"
+                          textContentType="none"
+                          spellCheck={false}
+                          autoCorrect={false}
+                          importantForAutofill="no"
+                          multiline={true}
+                          numberOfLines={3}
+                          returnKeyType="next"
+                          blurOnSubmit={false}
+                          onSubmitEditing={() => websiteInputRef.current?.focus()}
+                        />
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Website</Text>
+                      <Pressable onPress={() => websiteInputRef.current?.focus()}>
+                        <TextInput
+                          ref={websiteInputRef}
+                          style={styles.input}
+                          value={formData.website}
+                          onChangeText={(value) => handleInputChange('website', value)}
+                          placeholder="https://your-charity.org"
+                          placeholderTextColor="#9CA3AF"
+                          autoCapitalize="none"
+                          autoComplete="off"
+                          textContentType="none"
+                          spellCheck={false}
+                          autoCorrect={false}
+                          importantForAutofill="no"
+                          keyboardType="url"
+                          returnKeyType="next"
+                          blurOnSubmit={false}
+                          onSubmitEditing={() => phoneInputRef.current?.focus()}
+                        />
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Phone Number</Text>
+                      <Pressable onPress={() => phoneInputRef.current?.focus()}>
+                        <TextInput
+                          ref={phoneInputRef}
+                          style={styles.input}
+                          value={formData.phone}
+                          onChangeText={(value) => handleInputChange('phone', value)}
+                          placeholder="+1 (555) 123-4567"
+                          placeholderTextColor="#9CA3AF"
+                          autoComplete="off"
+                          textContentType="none"
+                          spellCheck={false}
+                          autoCorrect={false}
+                          importantForAutofill="no"
+                          keyboardType="phone-pad"
+                          returnKeyType="next"
+                          blurOnSubmit={false}
+                          onSubmitEditing={() => addressInputRef.current?.focus()}
+                        />
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Address</Text>
+                      <Pressable onPress={() => addressInputRef.current?.focus()}>
+                        <TextInput
+                          ref={addressInputRef}
+                          style={styles.input}
+                          value={formData.address}
+                          onChangeText={(value) => handleInputChange('address', value)}
+                          placeholder="Enter your charity's address"
+                          placeholderTextColor="#9CA3AF"
+                          autoCapitalize="words"
+                          autoComplete="off"
+                          textContentType="none"
+                          spellCheck={false}
+                          autoCorrect={false}
+                          importantForAutofill="no"
+                          returnKeyType="next"
+                          blurOnSubmit={false}
+                          onSubmitEditing={() => emailInputRef.current?.focus()}
+                        />
+                      </Pressable>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Full Name</Text>
+                      <Pressable onPress={() => nameInputRef.current?.focus()}>
+                        <TextInput
+                          ref={nameInputRef}
+                          style={styles.input}
+                          value={formData.name}
+                          onChangeText={(value) => handleInputChange('name', value)}
+                          placeholder="Enter your full name"
+                          placeholderTextColor="#9CA3AF"
+                          autoCapitalize="words"
+                          autoComplete="off"
+                          textContentType="none"
+                          spellCheck={false}
+                          autoCorrect={false}
+                          importantForAutofill="no"
+                          autoFocus={true}
+                          returnKeyType="next"
+                          blurOnSubmit={false}
+                          onSubmitEditing={() => countryInputRef.current?.focus()}
+                        />
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Country</Text>
+                      <Pressable onPress={() => countryInputRef.current?.focus()}>
+                        <TextInput
+                          ref={countryInputRef}
+                          style={styles.input}
+                          value={formData.country}
+                          onChangeText={(value) => handleInputChange('country', value)}
+                          placeholder="e.g., Syria, Lebanon, Afghanistan"
+                          placeholderTextColor="#9CA3AF"
+                          autoCapitalize="words"
+                          autoComplete="off"
+                          textContentType="none"
+                          spellCheck={false}
+                          autoCorrect={false}
+                          importantForAutofill="no"
+                          returnKeyType="next"
+                          blurOnSubmit={false}
+                          onSubmitEditing={() => bioInputRef.current?.focus()}
+                        />
+                      </Pressable>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Bio</Text>
+                      <Pressable onPress={() => bioInputRef.current?.focus()}>
+                        <TextInput
+                          ref={bioInputRef}
+                          style={[styles.input, styles.textArea]}
+                          value={formData.bio}
+                          onChangeText={(value) => handleInputChange('bio', value)}
+                          placeholder="Tell us about yourself (optional)"
+                          placeholderTextColor="#9CA3AF"
+                          autoCapitalize="sentences"
+                          autoComplete="off"
+                          textContentType="none"
+                          spellCheck={false}
+                          autoCorrect={false}
+                          importantForAutofill="no"
+                          multiline={true}
+                          numberOfLines={3}
+                          returnKeyType="next"
+                          blurOnSubmit={false}
+                          onSubmitEditing={() => emailInputRef.current?.focus()}
+                        />
+                      </Pressable>
+                    </View>
+                  </>
+                )}
               </>
             )}
 
@@ -344,6 +562,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     fontSize: 16,
     color: '#1F2937',
+  },
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
   },
   submitButton: {
     backgroundColor: '#3B82F6',
