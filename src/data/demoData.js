@@ -6,6 +6,12 @@ export const charities = [
     name: 'Syrian Education Foundation',
     category: 'Education',
     country: 'Syria',
+    location: {
+      city: 'Damascus',
+      country: 'Syria',
+      latitude: 33.5138,
+      longitude: 36.2765
+    },
     founded: 2015,
     verified: true,
     logo: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=200&h=200&fit=crop&crop=face',
@@ -25,6 +31,12 @@ export const charities = [
     name: 'Hope for Syria Medical',
     category: 'Healthcare',
     country: 'Syria',
+    location: {
+      city: 'Aleppo',
+      country: 'Syria',
+      latitude: 36.2021,
+      longitude: 37.1343
+    },
     founded: 2013,
     verified: true,
     logo: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=200&h=200&fit=crop&crop=face',
@@ -44,6 +56,12 @@ export const charities = [
     name: 'Syrian Community Development',
     category: 'Community Development',
     country: 'Syria',
+    location: {
+      city: 'Homs',
+      country: 'Syria',
+      latitude: 34.7324,
+      longitude: 36.7135
+    },
     founded: 2016,
     verified: false,
     logo: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=200&h=200&fit=crop&crop=face',
@@ -60,9 +78,15 @@ export const charities = [
   },
   {
     id: '4',
-    name: 'Afghan Women\'s Education Initiative',
+    name: "Afghan Women's Education Initiative",
     category: 'Education',
     country: 'Afghanistan',
+    location: {
+      city: 'Kabul',
+      country: 'Afghanistan',
+      latitude: 34.5553,
+      longitude: 69.2075
+    },
     founded: 2018,
     verified: true,
     logo: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=200&h=200&fit=crop&crop=face',
@@ -82,6 +106,12 @@ export const charities = [
     name: 'Lebanese Relief Network',
     category: 'Disaster Relief',
     country: 'Lebanon',
+    location: {
+      city: 'Beirut',
+      country: 'Lebanon',
+      latitude: 33.8938,
+      longitude: 35.5018
+    },
     founded: 2020,
     verified: true,
     logo: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face',
@@ -101,6 +131,12 @@ export const charities = [
     name: 'Iraqi Youth Development',
     category: 'Youth Development',
     country: 'Iraq',
+    location: {
+      city: 'Baghdad',
+      country: 'Iraq',
+      latitude: 33.3152,
+      longitude: 44.3661
+    },
     founded: 2017,
     verified: false,
     logo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop&crop=face',
@@ -121,6 +157,12 @@ export const userProfile = {
   id: 'user1',
   name: 'Demo User',
   country: 'Syria',
+  location: {
+    city: 'Damascus',
+    country: 'Syria',
+    latitude: 33.5138,
+    longitude: 36.2765
+  },
   avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
   totalDonated: 575,
   totalDonations: 5,
@@ -172,7 +214,7 @@ export const socialPosts = [
     charityId: '1',
     type: 'milestone',
     title: '🎉 Major Milestone Reached!',
-    content: 'We\'re thrilled to announce that we\'ve successfully built our 8th school in northern Syria! This new facility will provide education for 200 children who previously had no access to schooling. Thank you to all our supporters who made this possible!',
+    content: "We're thrilled to announce that we've successfully built our 8th school in northern Syria! This new facility will provide education for 200 children who previously had no access to schooling. Thank you to all our supporters who made this possible!",
     image: 'https://images.unsplash.com/photo-1523240798131-586a4680c3a0?w=400&h=300&fit=crop',
     timestamp: '2024-01-20T10:30:00Z',
     likes: 342,
@@ -195,8 +237,8 @@ export const socialPosts = [
     id: 'post3',
     charityId: '4',
     type: 'story',
-    title: 'Fatima\'s Story',
-    content: 'Meet Fatima, a 22-year-old Afghan woman who graduated from our vocational training program. She now runs her own tailoring business and employs 3 other women. "Education gave me hope when I had none," she says. Stories like Fatima\'s inspire us every day.',
+    title: "Fatima's Story",
+    content: "Meet Fatima, a 22-year-old Afghan woman who graduated from our vocational training program. She now runs her own tailoring business and employs 3 other women. \"Education gave me hope when I had none,\" she says. Stories like Fatima's inspire us every day.",
     image: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=400&h=300&fit=crop',
     timestamp: '2024-01-16T09:45:00Z',
     likes: 456,
@@ -220,7 +262,7 @@ export const socialPosts = [
     charityId: '3',
     type: 'update',
     title: 'Community Center Opening',
-    content: 'We\'re excited to announce the opening of our 6th community center in Damascus! This new facility will provide job training, childcare services, and community events for over 300 families. The center includes a computer lab, library, and meeting rooms.',
+    content: "We're excited to announce the opening of our 6th community center in Damascus! This new facility will provide job training, childcare services, and community events for over 300 families. The center includes a computer lab, library, and meeting rooms.",
     image: 'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=400&h=300&fit=crop',
     timestamp: '2024-01-12T11:10:00Z',
     likes: 167,
@@ -231,8 +273,8 @@ export const socialPosts = [
     id: 'post6',
     charityId: '6',
     type: 'story',
-    title: 'Ahmed\'s Leadership Journey',
-    content: 'Ahmed, a 19-year-old from Baghdad, joined our youth leadership program last year. Today, he\'s organizing community clean-up initiatives and mentoring younger participants. "This program showed me that I can make a difference in my community," he shares proudly.',
+    title: "Ahmed's Leadership Journey",
+    content: 'Ahmed, a 19-year-old from Baghdad, joined our youth leadership program last year. Today, he is organizing community clean-up initiatives and mentoring younger participants. "This program showed me that I can make a difference in my community," he shares proudly.',
     image: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=400&h=300&fit=crop',
     timestamp: '2024-01-10T13:30:00Z',
     likes: 234,
@@ -244,12 +286,36 @@ export const socialPosts = [
     charityId: '2',
     type: 'milestone',
     title: '1000 Surgeries Completed',
-    content: 'Today we celebrate a major milestone - our medical teams have successfully completed 1000 life-saving surgeries! Each procedure represents a life changed, a family given hope. We\'re grateful to our medical volunteers and supporters who make this work possible.',
+    content: 'Today we celebrate a major milestone - our medical teams have successfully completed 1000 life-saving surgeries! Each procedure represents a life changed, a family given hope. We are grateful to our medical volunteers and supporters who make this work possible.',
     image: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1f?w=400&h=300&fit=crop',
     timestamp: '2024-01-08T08:00:00Z',
     likes: 523,
     comments: 42,
     shares: 31
+  },
+  {
+    id: 'post8',
+    charityId: '5',
+    type: 'update',
+    title: 'Neighborhood Kitchen Expansion',
+    content: 'We opened two additional community kitchens in Tripoli this week, serving warm meals to over 600 families displaced by recent storms. Volunteers continue to prep fresh food every day thanks to your support.',
+    image: 'https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?w=400&h=300&fit=crop',
+    timestamp: '2024-01-05T12:15:00Z',
+    likes: 198,
+    comments: 17,
+    shares: 11
+  },
+  {
+    id: 'post9',
+    charityId: '3',
+    type: 'story',
+    title: 'Entrepreneurship Graduates',
+    content: 'Twenty-five young entrepreneurs just graduated from our accelerator in Homs. They are launching businesses ranging from eco-cleaning products to solar-powered phone charging kiosks. Their work is already creating jobs locally.',
+    image: 'https://images.unsplash.com/photo-1483478550801-ceba5fe50e8e?w=400&h=300&fit=crop',
+    timestamp: '2024-01-03T09:05:00Z',
+    likes: 146,
+    comments: 9,
+    shares: 7
   }
 ];
 
