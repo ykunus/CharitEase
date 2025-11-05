@@ -70,15 +70,53 @@ const DonationModal = ({ visible, charity, onClose, onDonate }) => {
       return;
     }
 
+    // Check if charity can accept donations
+    if (!charity.stripe_account_id || !charity.charges_enabled) {
+      Alert.alert(
+        "Unable to Process Donation", 
+        "This charity is still setting up their payment processing. Please try again later.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
-      const response = await fetch(`${API_URL}/create-payment-intent`, {
+      // Check charity account status first
+      const statusResponse = await fetch(`${API_URL}/charity-account-status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          account_id: charity.stripe_account_id 
+        }),
+      });
+      
+      if (!statusResponse.ok) {
+        throw new Error('Failed to check charity account status');
+      }
+      
+      const statusData = await statusResponse.json();
+      
+      if (!statusData.charges_enabled) {
+        Alert.alert(
+          "Charity Not Ready", 
+          "This charity hasn't completed their payment setup yet. Please try again later.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      // Create payment intent with destination
+      const response = await fetch(`${API_URL}/create-donation-with-destination`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           amount: parseFloat(amount) * 100,
-          payment_method_types: ['card']
+          destination_account: charity.stripe_account_id,
+          platform_fee_percent: charity.platform_fee_percent || 2.5,
+          charity_name: charity.name,
+          donor_message: message || `Donation to ${charity.name}`
         }),
       });
       
@@ -113,7 +151,11 @@ const DonationModal = ({ visible, charity, onClose, onDonate }) => {
           Alert.alert("Payment Failed", paymentError.message);
         }
       } else {
-        Alert.alert("Success", "Your donation was successful!");
+        Alert.alert(
+          "Success!", 
+          `Your donation of ${formatCurrency(parseFloat(amount))} to ${charity.name} was successful! The funds will be transferred directly to the charity.`,
+          [{ text: "OK" }]
+        );
         onDonate(parseFloat(amount), message || `Donation to ${charity.name}`);
         handleClose();
       }

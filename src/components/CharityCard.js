@@ -35,6 +35,18 @@ const CharityCard = ({ charity, isFollowing, onFollow, onPress }) => {
             </View>
           )}
         </View>
+        {/* Donation Status Badge */}
+        {charity.charges_enabled ? (
+          <View style={styles.donationReadyBadge}>
+            <Ionicons name="card" size={12} color="#FFFFFF" />
+            <Text style={styles.donationReadyText}>Ready</Text>
+          </View>
+        ) : (
+          <View style={styles.donationPendingBadge}>
+            <Ionicons name="time" size={12} color="#FFFFFF" />
+            <Text style={styles.donationPendingText}>Pending</Text>
+          </View>
+        )}
       </View>
 
       {/* Content */}
@@ -135,6 +147,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#FFFFFF',
+  },
+  donationReadyBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#22C55E',
+  },
+  donationReadyText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginLeft: 4,
+  },
+  donationPendingBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#F59E0B',
+  },
+  donationPendingText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginLeft: 4,
   },
   content: {
     padding: 16,

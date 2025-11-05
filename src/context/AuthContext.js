@@ -31,29 +31,29 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuthState = async () => {
     try {
-      // Check if user is already logged in
-      const { data: { session } } = await supabase.auth.getSession();
+      // Skip Supabase check for demo mode
+      console.log('🔄 Checking demo auth state');
       
-      if (session?.user) {
-        // User is logged in, get their profile
-        await loadUserProfile(session.user);
-      } else {
-        // Check AsyncStorage for demo user
-        const demoUser = await AsyncStorage.getItem('demoUser');
-        if (demoUser) {
-          const parsed = JSON.parse(demoUser);
-          const fallbackFollowed = Array.isArray(parsed.followedCharities) ? parsed.followedCharities : [];
+      // Check AsyncStorage for demo user
+      const demoUser = await AsyncStorage.getItem('demoUser');
+      if (demoUser) {
+        const parsed = JSON.parse(demoUser);
+        const fallbackFollowed = Array.isArray(parsed.followedCharities) ? parsed.followedCharities : [];
 
-          setUser({
-            ...parsed,
-            followedCharities: fallbackFollowed
-          });
-          setFollowedCharities(fallbackFollowed);
-          setIsAuthenticated(true);
-        }
+        setUser({
+          ...parsed,
+          followedCharities: fallbackFollowed
+        });
+        setFollowedCharities(fallbackFollowed);
+        setIsAuthenticated(true);
+        setIsConnected(false); // Demo mode
+        
+        console.log('✅ Demo user loaded from storage');
+      } else {
+        console.log('ℹ️ No demo user found');
       }
     } catch (error) {
-      console.log('Auth check error:', error);
+      console.log('Demo auth check error:', error);
     } finally {
       setIsLoading(false);
     }
@@ -181,102 +181,31 @@ export const AuthProvider = ({ children }) => {
 
   const testSupabaseConnection = async () => {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('count')
-        .limit(1);
-      
-      if (error) {
-        console.log('⚠️ Supabase not connected yet - using demo data');
-        console.log('Error:', error.message);
-        setIsConnected(false);
-      } else {
-        console.log('✅ Supabase connected successfully!');
-        setIsConnected(true);
-      }
+      console.log('🔄 Testing Supabase connection...');
+      // Skip Supabase test for demo mode
+      console.log('⚠️ Running in demo mode - Supabase disabled');
+      setIsConnected(false);
+      return false;
     } catch (err) {
       console.log('⚠️ Supabase connection failed - using demo data');
       console.log('Error:', err.message);
       setIsConnected(false);
+      return false;
     }
   };
 
   const signUp = async ({ email, password, name, country, userType, ...additionalData }) => {
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            name,
-            country,
-            userType,
-            ...additionalData
-          }
-        }
-      });
-
-      if (error) throw error;
-
-      // If user was created successfully, create their profile in the appropriate table
-      if (data.user) {
-        if (userType === 'charity') {
-          // Create charity profile
-          const charityProfile = {
-            id: data.user.id,
-            email: data.user.email,
-            name: additionalData.charityName || name,
-            country: country,
-            mission: additionalData.mission || '',
-            website: additionalData.website || '',
-            phone: additionalData.phone || '',
-            address: additionalData.address || '',
-            founded_year: additionalData.foundedYear || new Date().getFullYear(),
-            category: additionalData.category || 'General',
-            logo_url: null,
-            cover_image_url: null,
-            verified: false,
-            total_raised: 0,
-            followers: 0
-          };
-
-          const { data: createdCharity, error: createError } = await supabase
-            .from('charities')
-            .insert([charityProfile])
-            .select()
-            .single();
-
-          if (createError) {
-            console.log('Charity profile creation error:', createError);
-          }
-        } else {
-          // Create regular user profile
-          const newProfile = {
-            id: data.user.id,
-            email: data.user.email,
-            name: name,
-            country: country,
-            bio: additionalData.bio || '',
-            avatar_url: null,
-            total_donated: 0,
-            total_donations: 0
-          };
-
-          const { data: createdProfile, error: createError } = await supabase
-            .from('users')
-            .insert([newProfile])
-            .select()
-            .single();
-
-          if (createError) {
-            console.log('Profile creation error:', createError);
-          }
-        }
-      }
-
-      // Store user data temporarily until email confirmation
+      // Demo mode - skip Supabase and create local user
+      console.log('🔄 Creating demo account (Supabase disabled)');
+      
+      // Simulate network delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Create demo user data
+      const demoUserId = `demo_${Date.now()}`;
       const tempUser = {
-        id: data.user?.id || 'temp',
+        id: demoUserId,
         email,
         name: userType === 'charity' ? (additionalData.charityName || name) : name,
         country,
@@ -305,28 +234,40 @@ export const AuthProvider = ({ children }) => {
       setUser(tempUser);
       setFollowedCharities([]);
       setIsAuthenticated(true);
+      setIsConnected(false); // Mark as demo mode
 
-      return data;
+      console.log('✅ Demo account created successfully');
+      return { user: tempUser };
     } catch (error) {
-      throw new Error(error.message);
+      console.error('Demo signup error:', error);
+      throw new Error('Failed to create demo account');
     }
   };
 
   const signIn = async ({ email, password }) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-
-      if (error) throw error;
-
-      // Load user profile after successful sign in
-      await loadUserProfile(data.user);
-
-      return data;
+      // Demo mode - check for existing demo user
+      console.log('🔄 Demo signin attempt');
+      
+      const demoUser = await AsyncStorage.getItem('demoUser');
+      if (demoUser) {
+        const parsedUser = JSON.parse(demoUser);
+        if (parsedUser.email === email) {
+          setUser(parsedUser);
+          setFollowedCharities(parsedUser.followedCharities || []);
+          setIsAuthenticated(true);
+          setIsConnected(false); // Demo mode
+          
+          console.log('✅ Demo signin successful');
+          return { user: parsedUser };
+        }
+      }
+      
+      // If no matching demo user found
+      throw new Error('Invalid email or password (demo mode)');
     } catch (error) {
-      throw new Error(error.message);
+      console.error('Demo signin error:', error);
+      throw new Error('Invalid email or password');
     }
   };
 
