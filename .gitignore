@@ -34,9 +34,12 @@ yarn-error.*
 .env*.local
 .env
 **/.env
+**/backend*/.env
 backend-example/.env
 
 # API keys and secrets
+*.key
+**/*.key
 
 # typescript
 *.tsbuildinfo
