@@ -15,6 +15,7 @@ import WelcomeScreen from '../screens/WelcomeScreen';
 import SignInScreen from '../screens/SignInScreen';
 import CharityAdminScreen from '../screens/CharityAdminScreen';
 import LocalCharityMapScreen from '../screens/LocalCharityMapScreen';
+import SettingsScreen from '../screens/SettingsScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -81,6 +82,24 @@ const CharitiesStack = () => {
   );
 };
 
+// Profile Stack Navigator
+const ProfileStack = () => {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen 
+        name="ProfileMain" 
+        component={ProfileScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen 
+        name="Settings" 
+        component={SettingsScreen}
+        options={{ headerShown: false }}
+      />
+    </Stack.Navigator>
+  );
+};
+
 // Main Tab Navigator
 const MainTabs = () => {
   const { user } = useAuth();
@@ -127,18 +146,16 @@ const MainTabs = () => {
           tabBarLabel: isCharity ? 'Posts' : 'Feed',
         }}
       />
-      {!isCharity && (
-        <Tab.Screen 
-          name="Charities" 
-          component={CharitiesStack}
-          options={{
-            tabBarLabel: 'Charities',
-          }}
-        />
-      )}
+      <Tab.Screen 
+        name="Charities" 
+        component={CharitiesStack}
+        options={{
+          tabBarLabel: 'Charities',
+        }}
+      />
       <Tab.Screen 
         name="Profile" 
-        component={ProfileScreen}
+        component={ProfileStack}
         options={{
           tabBarLabel: isCharity ? 'Charity Profile' : 'Profile',
         }}

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,21 +8,34 @@ import {
   SafeAreaView,
   RefreshControl,
   Image,
-  Alert
+  ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
-import { supabase } from '../config/supabase';
+import PostCard from '../components/PostCard';
 
 const ProfileScreen = ({ navigation }) => {
-  const { user, donations, getCharityById, getFollowedCharitiesData, isConnected, signOut } = useAuth();
+  const { user, donations, posts, getCharityById, getFollowedCharitiesData, likePost } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('posts'); // 'posts' or 'donations' or 'following'
 
+  const isCharity = user?.userType === 'charity';
   const followedCharities = getFollowedCharitiesData();
+
+  // Get user's or charity's posts
+  const userPosts = useMemo(() => {
+    if (!posts) return [];
+    return posts.filter(post => {
+      if (isCharity) {
+        return post.charityId === user.id;
+      }
+      return false; // Regular users don't create posts currently
+    }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  }, [posts, user, isCharity]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -38,73 +51,27 @@ const ProfileScreen = ({ navigation }) => {
     });
   };
 
-  const handleBrowseCharities = () => {
-    navigation.navigate('Charities');
+  const handleSettingsPress = () => {
+    navigation.navigate('Settings');
   };
 
-  const handleSignOut = async () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Sign Out', 
-          style: 'destructive',
-          onPress: async () => {
-            await signOut();
-            // Navigation will be handled by the main app component
-          }
-        }
-      ]
-    );
+  const handleLike = (postId) => {
+    likePost(postId);
   };
 
-  const testDatabase = async () => {
-    try {
-      // Test 1: Check users table
-      const { data: users, error: usersError } = await supabase
-        .from('users')
-        .select('count')
-        .limit(1);
-
-      // Test 2: Check charities table
-      const { data: charities, error: charitiesError } = await supabase
-        .from('charities')
-        .select('name, country')
-        .limit(3);
-
-      // Test 3: Check posts table
-      const { data: posts, error: postsError } = await supabase
-        .from('posts')
-        .select('title, type')
-        .limit(3);
-
-      if (usersError || charitiesError || postsError) {
-        Alert.alert(
-          '❌ Database Test Failed',
-          `Users: ${usersError?.message || 'OK'}\nCharities: ${charitiesError?.message || 'OK'}\nPosts: ${postsError?.message || 'OK'}`
-        );
-      } else {
-        Alert.alert(
-          '✅ Database Test Successful!',
-          `✅ Users: ${users[0]?.count || 0} records\n✅ Charities: ${charities.length} records\n✅ Posts: ${posts.length} records\n\nDatabase is working perfectly!`
-        );
-      }
-    } catch (error) {
-      Alert.alert('❌ Database Connection Failed', error.message);
-    }
+  const handleComment = (post) => {
+    console.log('Comment on post:', post.id);
   };
 
-  const renderStatsCard = (title, value, icon, color) => (
-    <View style={[styles.statsCard, { borderLeftColor: color }]}>
-      <View style={styles.statsIconContainer}>
-        <Ionicons name={icon} size={24} color={color} />
-      </View>
-      <View style={styles.statsContent}>
-        <Text style={styles.statsValue}>{value}</Text>
-        <Text style={styles.statsLabel}>{title}</Text>
-      </View>
+  const handleShare = (post) => {
+    console.log('Share post:', post.id);
+  };
+
+  const renderCompactStat = (icon, value, label, color) => (
+    <View style={styles.compactStat}>
+      <Ionicons name={icon} size={18} color={color} />
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 
@@ -146,138 +113,277 @@ const ProfileScreen = ({ navigation }) => {
   };
 
   const renderHeader = () => (
-    <View style={styles.header}>
-      {/* Profile Info */}
-      <View style={styles.profileSection}>
-        <Image source={{ uri: user.avatar }} style={styles.avatar} />
-        <View style={styles.profileInfo}>
-          <Text style={styles.userName}>{user.name}</Text>
-          <Text style={styles.userCountry}>{user.country}</Text>
-          {user.bio && (
-            <Text style={styles.userBio}>{user.bio}</Text>
-          )}
-          {user.userType === 'charity' && (
-            <>
-              <Text style={styles.charityMission}>{user.mission}</Text>
-              <View style={styles.charityDetails}>
-                {user.website && (
-                  <Text style={styles.charityDetail}>🌐 {user.website}</Text>
-                )}
-                {user.phone && (
-                  <Text style={styles.charityDetail}>📞 {user.phone}</Text>
-                )}
-                {user.address && (
-                  <Text style={styles.charityDetail}>📍 {user.address}</Text>
-                )}
-                <Text style={styles.charityDetail}>📅 Founded {user.foundedYear}</Text>
-                <Text style={styles.charityDetail}>🏷️ {user.category}</Text>
-                <Text style={styles.charityDetail}>
-                  {user.verified ? '✅ Verified Charity' : '⏳ Pending Verification'}
-                </Text>
-              </View>
-            </>
-          )}
-          <Text style={styles.userJoined}>
-            {user.userType === 'charity' ? 'Charity' : 'Member'} since {new Date(user.joinedDate).toLocaleDateString('en-US', { 
-              month: 'long', 
-              year: 'numeric' 
-            })}
-          </Text>
-          <View style={styles.connectionStatus}>
-            <Ionicons 
-              name={isConnected ? "checkmark-circle" : "alert-circle"} 
-              size={16} 
-              color={isConnected ? "#22C55E" : "#F59E0B"} 
-            />
-            <Text style={[styles.connectionText, { color: isConnected ? "#22C55E" : "#F59E0B" }]}>
-              {isConnected ? "Database Connected" : "Using Demo Data"}
-            </Text>
-          </View>
-        </View>
+    <View>
+      {/* Header with Settings Button */}
+      <View style={styles.topBar}>
+        <Text style={styles.screenTitle}>Profile</Text>
+        <TouchableOpacity onPress={handleSettingsPress} style={styles.settingsButton}>
+          <Ionicons name="settings-outline" size={24} color="#1F2937" />
+        </TouchableOpacity>
       </View>
 
-      {/* Stats Cards */}
-      <View style={styles.statsContainer}>
-        {user.userType === 'charity' ? (
+      {/* Profile Card - LinkedIn Style */}
+      <View style={styles.profileCard}>
+        {/* Avatar centered at top */}
+        <View style={styles.avatarContainer}>
+          <Image source={{ uri: user.avatar }} style={styles.avatar} />
+          {isCharity && user.verified && (
+            <View style={styles.verifiedBadge}>
+              <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
+            </View>
+          )}
+        </View>
+
+        {/* Name and Basic Info */}
+        <Text style={styles.userName}>{user.name}</Text>
+        <Text style={styles.userLocation}>
+          <Ionicons name="location-outline" size={14} color="#6B7280" /> {user.country}
+        </Text>
+
+        {/* Compact Stats Row */}
+        <View style={styles.statsRow}>
+          {isCharity ? (
+            <>
+              {renderCompactStat(
+                'trending-up',
+                formatCurrency(user.totalRaised || 0),
+                'Raised',
+                '#22C55E'
+              )}
+              {renderCompactStat(
+                'people',
+                (user.followers || 0).toString(),
+                'Followers',
+                '#3B82F6'
+              )}
+            </>
+          ) : (
+            <>
+              {renderCompactStat(
+                'heart',
+                formatCurrency(user.totalDonated || 0),
+                'Donated',
+                '#EF4444'
+              )}
+              {renderCompactStat(
+                'people',
+                (user.followedCharities?.length || 0).toString(),
+                'Following',
+                '#3B82F6'
+              )}
+              {renderCompactStat(
+                'gift',
+                (user.totalDonations || 0).toString(),
+                'Donations',
+                '#22C55E'
+              )}
+            </>
+          )}
+        </View>
+
+        {/* Member Since */}
+        <Text style={styles.memberSince}>
+          {isCharity ? '🏢 Charity' : '👤 Member'} since {new Date(user.joinedDate).toLocaleDateString('en-US', { 
+            month: 'long', 
+            year: 'numeric' 
+          })}
+        </Text>
+      </View>
+
+      {/* About/Description Section */}
+      <View style={styles.aboutCard}>
+        <Text style={styles.sectionTitle}>About</Text>
+        {isCharity ? (
           <>
-            {renderStatsCard(
-              'Total Raised',
-              formatCurrency(user.totalRaised || 0),
-              'trending-up',
-              '#22C55E'
-            )}
-            {renderStatsCard(
-              'Followers',
-              (user.followers || 0).toString(),
-              'people',
-              '#3B82F6'
-            )}
-            {renderStatsCard(
-              'Category',
-              user.category || 'General',
-              'tag',
-              '#8B5CF6'
-            )}
+            <Text style={styles.aboutText}>{user.mission}</Text>
+            <View style={styles.detailsGrid}>
+              {user.category && (
+                <View style={styles.detailItem}>
+                  <Ionicons name="pricetag-outline" size={16} color="#6B7280" />
+                  <Text style={styles.detailText}>{user.category}</Text>
+                </View>
+              )}
+              {user.foundedYear && (
+                <View style={styles.detailItem}>
+                  <Ionicons name="calendar-outline" size={16} color="#6B7280" />
+                  <Text style={styles.detailText}>Founded {user.foundedYear}</Text>
+                </View>
+              )}
+              {user.website && (
+                <View style={styles.detailItem}>
+                  <Ionicons name="globe-outline" size={16} color="#6B7280" />
+                  <Text style={styles.detailTextLink} numberOfLines={1}>{user.website}</Text>
+                </View>
+              )}
+              {user.phone && (
+                <View style={styles.detailItem}>
+                  <Ionicons name="call-outline" size={16} color="#6B7280" />
+                  <Text style={styles.detailText}>{user.phone}</Text>
+                </View>
+              )}
+              {user.address && (
+                <View style={styles.detailItem}>
+                  <Ionicons name="location-outline" size={16} color="#6B7280" />
+                  <Text style={styles.detailText}>{user.address}</Text>
+                </View>
+              )}
+              {!user.verified && (
+                <View style={styles.detailItem}>
+                  <Ionicons name="time-outline" size={16} color="#F59E0B" />
+                  <Text style={[styles.detailText, { color: '#F59E0B' }]}>Pending Verification</Text>
+                </View>
+              )}
+            </View>
           </>
         ) : (
           <>
-            {renderStatsCard(
-              'Total Donated',
-              formatCurrency(user.totalDonated || 0),
-              'heart',
-              '#EF4444'
-            )}
-            {renderStatsCard(
-              'Charities Followed',
-              (user.followedCharities?.length || 0).toString(),
-              'people',
-              '#3B82F6'
-            )}
-            {renderStatsCard(
-              'Donations Made',
-              (user.totalDonations || 0).toString(),
-              'gift',
-              '#22C55E'
+            {user.bio ? (
+              <Text style={styles.aboutText}>{user.bio}</Text>
+            ) : (
+              <Text style={styles.emptyBioText}>No bio added yet</Text>
             )}
           </>
         )}
       </View>
 
-      {/* Quick Actions */}
-      <View style={styles.quickActions}>
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={handleBrowseCharities}
+      {/* Tabs */}
+      <View style={styles.tabsContainer}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'posts' && styles.tabActive]}
+          onPress={() => setActiveTab('posts')}
         >
-          <Ionicons name="heart-outline" size={20} color="#3B82F6" />
-          <Text style={styles.actionText}>Browse Charities</Text>
+          <Ionicons 
+            name="grid-outline" 
+            size={20} 
+            color={activeTab === 'posts' ? (isCharity ? '#22C55E' : '#3B82F6') : '#6B7280'} 
+          />
+          <Text style={[styles.tabText, activeTab === 'posts' && styles.tabTextActive]}>
+            Posts
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => navigation.navigate('Feed')}
-        >
-          <Ionicons name="home-outline" size={20} color="#3B82F6" />
-          <Text style={styles.actionText}>View Feed</Text>
-        </TouchableOpacity>
+        {!isCharity && (
+          <>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'donations' && styles.tabActive]}
+              onPress={() => setActiveTab('donations')}
+            >
+              <Ionicons 
+                name="heart-outline" 
+                size={20} 
+                color={activeTab === 'donations' ? '#3B82F6' : '#6B7280'} 
+              />
+              <Text style={[styles.tabText, activeTab === 'donations' && styles.tabTextActive]}>
+                Donations
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'following' && styles.tabActive]}
+              onPress={() => setActiveTab('following')}
+            >
+              <Ionicons 
+                name="people-outline" 
+                size={20} 
+                color={activeTab === 'following' ? '#3B82F6' : '#6B7280'} 
+              />
+              <Text style={[styles.tabText, activeTab === 'following' && styles.tabTextActive]}>
+                Following
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
-
-      {/* Sign Out Button */}
-      <TouchableOpacity 
-        style={styles.signOutButton}
-        onPress={handleSignOut}
-      >
-        <Ionicons name="log-out-outline" size={20} color="#EF4444" />
-        <Text style={styles.signOutText}>Sign Out</Text>
-      </TouchableOpacity>
-
     </View>
   );
 
-  const renderSectionHeader = (title) => (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-    </View>
-  );
+  const renderPost = ({ item: post }) => {
+    const charity = getCharityById(post.charityId);
+    if (!charity) return null;
+
+    return (
+      <PostCard
+        post={post}
+        charity={charity}
+        onLike={handleLike}
+        onComment={() => handleComment(post)}
+        onShare={() => handleShare(post)}
+        onCharityPress={handleCharityPress}
+      />
+    );
+  };
+
+  const renderTabContent = () => {
+    if (activeTab === 'posts') {
+      if (isCharity && userPosts.length === 0) {
+        return (
+          <EmptyState
+            icon="grid-outline"
+            title="No posts yet"
+            message="Share updates about your charity's impact and activities!"
+          />
+        );
+      }
+      if (!isCharity) {
+        return (
+          <EmptyState
+            icon="grid-outline"
+            title="No posts"
+            message="Users don't create posts. Check out the Feed to see updates from charities you follow!"
+          />
+        );
+      }
+      return (
+        <FlatList
+          data={userPosts}
+          renderItem={renderPost}
+          keyExtractor={(item) => item.id}
+          scrollEnabled={false}
+          contentContainerStyle={styles.postsContainer}
+        />
+      );
+    }
+
+    if (activeTab === 'donations') {
+      if (donations.length === 0) {
+        return (
+          <EmptyState
+            icon="heart-outline"
+            title="No donations yet"
+            message="Start supporting charities you care about!"
+          />
+        );
+      }
+      return (
+        <FlatList
+          data={donations}
+          renderItem={renderDonation}
+          keyExtractor={(item) => item.id}
+          scrollEnabled={false}
+        />
+      );
+    }
+
+    if (activeTab === 'following') {
+      if (followedCharities.length === 0) {
+        return (
+          <EmptyState
+            icon="people-outline"
+            title="Not following anyone yet"
+            message="Discover and follow charities to see their updates!"
+          />
+        );
+      }
+      return (
+        <FlatList
+          data={followedCharities}
+          renderItem={renderFollowedCharity}
+          keyExtractor={(item) => item.id}
+          scrollEnabled={false}
+        />
+      );
+    }
+
+    return null;
+  };
 
   if (loading || !user) {
     return <LoadingSpinner text="Loading profile..." />;
@@ -285,37 +391,20 @@ const ProfileScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <FlatList
-        data={donations}
-        renderItem={renderDonation}
-        keyExtractor={(item) => item.id}
+      <ScrollView
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#3B82F6"
+            tintColor={isCharity ? '#22C55E' : '#3B82F6'}
           />
         }
-        ListHeaderComponent={renderHeader}
-        ListFooterComponent={
-          <View>
-            {/* Followed Charities Section */}
-            {followedCharities.length > 0 && (
-              <View>
-                {renderSectionHeader('Followed Charities')}
-                <FlatList
-                  data={followedCharities}
-                  renderItem={renderFollowedCharity}
-                  keyExtractor={(item) => item.id}
-                  scrollEnabled={false}
-                />
-              </View>
-            )}
-          </View>
-        }
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.contentContainer}
-      />
+        contentContainerStyle={styles.scrollContent}
+      >
+        {renderHeader()}
+        {renderTabContent()}
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -325,145 +414,112 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F9FAFB',
   },
-  contentContainer: {
+  scrollContent: {
     paddingBottom: 20,
   },
-  header: {
-    backgroundColor: '#FFFFFF',
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  profileSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginRight: 16,
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  userName: {
+  screenTitle: {
     fontSize: 24,
     fontWeight: '700',
     color: '#1F2937',
-    marginBottom: 4,
   },
-  userCountry: {
-    fontSize: 16,
-    color: '#6B7280',
-    marginBottom: 4,
+  settingsButton: {
+    padding: 8,
   },
-  userJoined: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    marginBottom: 8,
-  },
-  userBio: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginBottom: 8,
-    fontStyle: 'italic',
-  },
-  charityMission: {
-    fontSize: 14,
-    color: '#374151',
-    marginBottom: 8,
-    fontStyle: 'italic',
-  },
-  charityDetails: {
-    marginBottom: 8,
-  },
-  charityDetail: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 2,
-  },
-  connectionStatus: {
-    flexDirection: 'row',
+  profileCard: {
+    backgroundColor: '#FFFFFF',
+    paddingTop: 32,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
     alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
-  connectionText: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 4,
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: 16,
   },
-  statsContainer: {
-    marginBottom: 24,
+  avatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  statsCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
-    padding: 16,
+  verifiedBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    marginBottom: 12,
-    borderLeftWidth: 4,
+    padding: 2,
   },
-  statsIconContainer: {
-    marginRight: 16,
-  },
-  statsContent: {
-    flex: 1,
-  },
-  statsValue: {
-    fontSize: 20,
+  userName: {
+    fontSize: 26,
     fontWeight: '700',
     color: '#1F2937',
-    marginBottom: 2,
+    textAlign: 'center',
+    marginBottom: 6,
   },
-  statsLabel: {
-    fontSize: 14,
+  userLocation: {
+    fontSize: 16,
     color: '#6B7280',
+    marginBottom: 20,
+    textAlign: 'center',
   },
-  quickActions: {
+  statsRow: {
     flexDirection: 'row',
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-  },
-  actionText: {
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#3B82F6',
-  },
-  signOutButton: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#FEF2F2',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    marginTop: 12,
+    gap: 32,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    width: '100%',
+    marginBottom: 16,
   },
-  signOutText: {
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#EF4444',
+  compactStat: {
+    alignItems: 'center',
+    gap: 4,
   },
-  sectionHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  statValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  memberSince: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  aboutCard: {
     backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
@@ -471,20 +527,81 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#1F2937',
+    marginBottom: 12,
+  },
+  aboutText: {
+    fontSize: 15,
+    color: '#374151',
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  emptyBioText: {
+    fontSize: 15,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+  },
+  detailsGrid: {
+    gap: 10,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  detailText: {
+    fontSize: 14,
+    color: '#6B7280',
+    flex: 1,
+  },
+  detailTextLink: {
+    fontSize: 14,
+    color: '#3B82F6',
+    flex: 1,
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    marginTop: 12,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabActive: {
+    borderBottomColor: '#3B82F6',
+  },
+  tabText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  tabTextActive: {
+    color: '#3B82F6',
+  },
+  postsContainer: {
+    paddingTop: 12,
   },
   charityItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
   charityLogo: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     marginRight: 12,
   },
   charityInfo: {
@@ -494,7 +611,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#1F2937',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   charityCategory: {
     fontSize: 14,
@@ -510,9 +627,9 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F3F4F6',
   },
   donationLogo: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     marginRight: 12,
   },
   donationInfo: {
@@ -531,7 +648,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   donationDate: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#6B7280',
     marginBottom: 4,
   },
