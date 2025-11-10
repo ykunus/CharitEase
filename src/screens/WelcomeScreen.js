@@ -28,12 +28,6 @@ const WelcomeScreen = ({ navigation }) => {
 
       {/* Content */}
       <View style={styles.content}>
-        <View style={styles.illustration}>
-          <Ionicons name="people" size={80} color="#3B82F6" />
-          <Text style={styles.illustrationText}>
-            Join our community of changemakers
-          </Text>
-        </View>
 
         <View style={styles.description}>
           <Text style={styles.descriptionTitle}>Make a Difference</Text>
