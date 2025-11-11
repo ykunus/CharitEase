@@ -31,29 +31,47 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuthState = async () => {
     try {
-      // Skip Supabase check for demo mode
-      console.log('🔄 Checking demo auth state');
+      console.log('🔄 Checking auth state...');
       
-      // Check AsyncStorage for demo user
+      // Check for active Supabase session
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (session && session.user) {
+        console.log('✅ Active Supabase session found');
+        await loadUserProfile(session.user);
+        setIsConnected(true);
+      } else {
+        // Fallback to AsyncStorage for demo user
+        console.log('⚠️ No Supabase session, checking local storage...');
+        const demoUser = await AsyncStorage.getItem('demoUser');
+        if (demoUser) {
+          const parsed = JSON.parse(demoUser);
+          const fallbackFollowed = Array.isArray(parsed.followedCharities) ? parsed.followedCharities : [];
+
+          setUser({
+            ...parsed,
+            followedCharities: fallbackFollowed
+          });
+          setFollowedCharities(fallbackFollowed);
+          setIsAuthenticated(true);
+          setIsConnected(false);
+          
+          console.log('✅ Demo user loaded from storage');
+        } else {
+          console.log('ℹ️ No user found');
+        }
+      }
+    } catch (error) {
+      console.log('Auth check error:', error);
+      // Try fallback to demo user
       const demoUser = await AsyncStorage.getItem('demoUser');
       if (demoUser) {
         const parsed = JSON.parse(demoUser);
-        const fallbackFollowed = Array.isArray(parsed.followedCharities) ? parsed.followedCharities : [];
-
-        setUser({
-          ...parsed,
-          followedCharities: fallbackFollowed
-        });
-        setFollowedCharities(fallbackFollowed);
+        setUser(parsed);
+        setFollowedCharities(parsed.followedCharities || []);
         setIsAuthenticated(true);
-        setIsConnected(false); // Demo mode
-        
-        console.log('✅ Demo user loaded from storage');
-      } else {
-        console.log('ℹ️ No demo user found');
+        setIsConnected(false);
       }
-    } catch (error) {
-      console.log('Demo auth check error:', error);
     } finally {
       setIsLoading(false);
     }
@@ -182,10 +200,20 @@ export const AuthProvider = ({ children }) => {
   const testSupabaseConnection = async () => {
     try {
       console.log('🔄 Testing Supabase connection...');
-      // Skip Supabase test for demo mode
-      console.log('⚠️ Running in demo mode - Supabase disabled');
-      setIsConnected(false);
-      return false;
+      const { data, error } = await supabase
+        .from('users')
+        .select('count')
+        .limit(1);
+      
+      if (error) {
+        console.log('⚠️ Supabase connection failed:', error.message);
+        setIsConnected(false);
+        return false;
+      }
+      
+      console.log('✅ Supabase connected successfully!');
+      setIsConnected(true);
+      return true;
     } catch (err) {
       console.log('⚠️ Supabase connection failed - using demo data');
       console.log('Error:', err.message);
@@ -196,112 +224,161 @@ export const AuthProvider = ({ children }) => {
 
   const signUp = async ({ email, password, name, country, userType, ...additionalData }) => {
     try {
-      // Demo mode - skip Supabase and create local user
-      console.log('🔄 Creating demo account (Supabase disabled)');
+      console.log('🔄 Creating account with Supabase...');
       
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Create demo user data
-      const demoUserId = `demo_${Date.now()}`;
-      const tempUser = {
-        id: demoUserId,
+      // Create auth user with Supabase
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
-        name: userType === 'charity' ? (additionalData.charityName || name) : name,
-        country,
-        bio: additionalData.bio || '',
-        avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-        totalDonated: 0,
-        totalDonations: 0,
-        joinedDate: new Date().toISOString(),
-        userType,
-        followedCharities: [],
-        // Charity-specific fields
-        ...(userType === 'charity' && {
-          mission: additionalData.mission || '',
-          website: additionalData.website || '',
-          phone: additionalData.phone || '',
-          address: additionalData.address || '',
-          foundedYear: additionalData.foundedYear || new Date().getFullYear(),
-          category: additionalData.category || 'Education',
-          verified: false,
-          totalRaised: 0,
-          followers: 0
-        })
-      };
+        password,
+        options: {
+          data: {
+            name: userType === 'charity' ? (additionalData.charityName || name) : name,
+            country,
+            userType,
+            ...additionalData
+          }
+        }
+      });
 
-      // If creating a charity, add it to the charities list
+      if (authError) {
+        console.error('Supabase signup error:', authError);
+        throw new Error(authError.message);
+      }
+
+      if (!authData.user) {
+        throw new Error('Account creation failed - no user returned');
+      }
+
+      console.log('✅ Supabase auth user created');
+
+      // Create profile based on user type
       if (userType === 'charity') {
-        const newCharity = {
-          id: demoUserId,
+        // Create charity profile
+        const charityProfile = {
+          email: email,
           name: additionalData.charityName || name,
           category: additionalData.category || 'Education',
           country: country,
-          location: {
-            city: country,
-            country: country,
-            latitude: 0,
-            longitude: 0
-          },
-          founded: additionalData.foundedYear || new Date().getFullYear(),
+          founded_year: additionalData.foundedYear || new Date().getFullYear(),
           verified: false,
-          stripe_account_id: null,
-          stripe_onboarding_complete: false,
-          charges_enabled: false,
-          payouts_enabled: false,
-          platform_fee_percent: 2.5,
-          logo: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face',
-          coverImage: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=400&h=200&fit=crop',
+          logo_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face',
+          cover_image_url: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=400&h=200&fit=crop',
           mission: additionalData.mission || '',
           website: additionalData.website || '',
           phone: additionalData.phone || '',
           address: additionalData.address || '',
-          totalRaised: 0,
+          total_raised: 0,
           followers: 0,
           impact: {}
         };
+
+        const { data: charity, error: charityError } = await supabase
+          .from('charities')
+          .insert([charityProfile])
+          .select()
+          .single();
+
+        if (charityError) {
+          console.error('Charity profile creation error:', charityError);
+          throw new Error('Failed to create charity profile: ' + charityError.message);
+        }
+
+        console.log('✅ Charity profile created in database');
+
+        // Add to local charities list
+        const newCharity = {
+          id: charity.id,
+          name: charity.name,
+          category: charity.category,
+          country: charity.country,
+          location: {
+            city: charity.country,
+            country: charity.country,
+            latitude: 0,
+            longitude: 0
+          },
+          founded: charity.founded_year,
+          verified: charity.verified,
+          logo: charity.logo_url,
+          coverImage: charity.cover_image_url,
+          mission: charity.mission,
+          website: charity.website,
+          phone: charity.phone,
+          address: charity.address,
+          totalRaised: charity.total_raised,
+          followers: charity.followers,
+          impact: charity.impact
+        };
         
         setCharitiesData(prev => [...prev, newCharity]);
-        console.log('✅ New charity added to charities list');
+        console.log('✅ New charity added to local charities list');
+      } else {
+        // Create user profile
+        const userProfile = {
+          email: email,
+          name: name,
+          country: country,
+          bio: additionalData.bio || '',
+          avatar_url: null,
+          total_donated: 0,
+          total_donations: 0,
+          user_type: 'user'
+        };
+
+        const { data: profile, error: profileError } = await supabase
+          .from('users')
+          .insert([userProfile])
+          .select()
+          .single();
+
+        if (profileError) {
+          console.error('User profile creation error:', profileError);
+          throw new Error('Failed to create user profile: ' + profileError.message);
+        }
+
+        console.log('✅ User profile created in database');
       }
 
-      await AsyncStorage.setItem('demoUser', JSON.stringify(tempUser));
-      setUser(tempUser);
-      setFollowedCharities([]);
-      setIsAuthenticated(true);
-      setIsConnected(false); // Mark as demo mode
+      // Load the user profile
+      await loadUserProfile(authData.user);
+      setIsConnected(true);
 
-      console.log('✅ Demo account created successfully');
-      return { user: tempUser };
+      console.log('✅ Account created successfully!');
+      return { user: authData.user };
     } catch (error) {
-      console.error('Demo signup error:', error);
-      throw new Error('Failed to create demo account');
+      console.error('Signup error:', error);
+      throw error;
     }
   };
 
   const signIn = async ({ email, password }) => {
     try {
-      // Demo mode - check for existing demo user
-      console.log('🔄 Demo signin attempt');
+      console.log('🔄 Signing in with Supabase...');
       
-      const demoUser = await AsyncStorage.getItem('demoUser');
-      if (demoUser) {
-        const parsedUser = JSON.parse(demoUser);
-        if (parsedUser.email === email) {
-          setUser(parsedUser);
-          setFollowedCharities(parsedUser.followedCharities || []);
-          setIsAuthenticated(true);
-          setIsConnected(false); // Demo mode
-          
-          console.log('✅ Demo signin successful');
-          return { user: parsedUser };
-        }
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (authError) {
+        console.error('Supabase signin error:', authError);
+        throw new Error(authError.message);
       }
+
+      if (!authData.user || !authData.session) {
+        throw new Error('Sign in failed - no user session');
+      }
+
+      console.log('✅ Supabase auth successful');
+
+      // Load user profile from database
+      await loadUserProfile(authData.user);
+      setIsConnected(true);
       
-      // If no matching demo user found
-      throw new Error('Invalid email or password (demo mode)');
+      console.log('✅ Sign in successful!');
+      return { user: authData.user };
     } catch (error) {
-      console.error('Demo signin error:', error);
+      console.error('Signin error:', error);
       throw new Error('Invalid email or password');
     }
   };
