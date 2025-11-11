@@ -10,10 +10,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Pressable
+  Pressable,
+  Modal,
+  FlatList
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import { charityCategories } from '../data/demoData';
 
 const SignInScreen = ({ navigation, route }) => {
   const { signIn, signUp } = useAuth();
@@ -21,6 +24,7 @@ const SignInScreen = ({ navigation, route }) => {
   
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -35,7 +39,7 @@ const SignInScreen = ({ navigation, route }) => {
     phone: '',
     address: '',
     foundedYear: new Date().getFullYear(),
-    category: 'General'
+    category: 'Education'
   });
 
   // Refs for input focus
@@ -142,7 +146,7 @@ const SignInScreen = ({ navigation, route }) => {
       phone: '',
       address: '',
       foundedYear: new Date().getFullYear(),
-      category: 'General'
+      category: 'Education'
     });
   };
 
@@ -228,6 +232,17 @@ const SignInScreen = ({ navigation, route }) => {
                           onSubmitEditing={() => missionInputRef.current?.focus()}
                         />
                       </Pressable>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Category *</Text>
+                      <TouchableOpacity 
+                        style={styles.pickerButton}
+                        onPress={() => setShowCategoryPicker(true)}
+                      >
+                        <Text style={styles.pickerButtonText}>{formData.category}</Text>
+                        <Ionicons name="chevron-down" size={20} color="#6B7280" />
+                      </TouchableOpacity>
                     </View>
 
                     <View style={styles.inputGroup}>
@@ -500,6 +515,53 @@ const SignInScreen = ({ navigation, route }) => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Category Picker Modal */}
+      <Modal
+        visible={showCategoryPicker}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowCategoryPicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Category</Text>
+              <TouchableOpacity onPress={() => setShowCategoryPicker(false)}>
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={charityCategories}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.categoryItem,
+                    formData.category === item && styles.categoryItemSelected
+                  ]}
+                  onPress={() => {
+                    handleInputChange('category', item);
+                    setShowCategoryPicker(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.categoryItemText,
+                      formData.category === item && styles.categoryItemTextSelected
+                    ]}
+                  >
+                    {item}
+                  </Text>
+                  {formData.category === item && (
+                    <Ionicons name="checkmark" size={20} color="#3B82F6" />
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -591,6 +653,67 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#3B82F6',
     fontWeight: '500',
+  },
+  pickerButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  pickerButtonText: {
+    fontSize: 16,
+    color: '#1F2937',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 40,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  categoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  categoryItemSelected: {
+    backgroundColor: '#EFF6FF',
+  },
+  categoryItemText: {
+    fontSize: 16,
+    color: '#1F2937',
+  },
+  categoryItemTextSelected: {
+    color: '#3B82F6',
+    fontWeight: '600',
   },
 });
 

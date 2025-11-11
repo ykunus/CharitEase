@@ -223,12 +223,47 @@ export const AuthProvider = ({ children }) => {
           phone: additionalData.phone || '',
           address: additionalData.address || '',
           foundedYear: additionalData.foundedYear || new Date().getFullYear(),
-          category: additionalData.category || 'General',
+          category: additionalData.category || 'Education',
           verified: false,
           totalRaised: 0,
           followers: 0
         })
       };
+
+      // If creating a charity, add it to the charities list
+      if (userType === 'charity') {
+        const newCharity = {
+          id: demoUserId,
+          name: additionalData.charityName || name,
+          category: additionalData.category || 'Education',
+          country: country,
+          location: {
+            city: country,
+            country: country,
+            latitude: 0,
+            longitude: 0
+          },
+          founded: additionalData.foundedYear || new Date().getFullYear(),
+          verified: false,
+          stripe_account_id: null,
+          stripe_onboarding_complete: false,
+          charges_enabled: false,
+          payouts_enabled: false,
+          platform_fee_percent: 2.5,
+          logo: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face',
+          coverImage: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=400&h=200&fit=crop',
+          mission: additionalData.mission || '',
+          website: additionalData.website || '',
+          phone: additionalData.phone || '',
+          address: additionalData.address || '',
+          totalRaised: 0,
+          followers: 0,
+          impact: {}
+        };
+        
+        setCharitiesData(prev => [...prev, newCharity]);
+        console.log('✅ New charity added to charities list');
+      }
 
       await AsyncStorage.setItem('demoUser', JSON.stringify(tempUser));
       setUser(tempUser);

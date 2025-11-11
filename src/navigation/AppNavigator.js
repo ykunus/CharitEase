@@ -13,7 +13,6 @@ import ProfileScreen from '../screens/ProfileScreen';
 import CharityDetailScreen from '../screens/CharityDetailScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import SignInScreen from '../screens/SignInScreen';
-import CharityAdminScreen from '../screens/CharityAdminScreen';
 import LocalCharityMapScreen from '../screens/LocalCharityMapScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 
@@ -28,7 +27,6 @@ const AuthNavigator = () => {
     <AuthStack.Navigator screenOptions={{ headerShown: false }}>
       <AuthStack.Screen name="Welcome" component={WelcomeScreen} />
       <AuthStack.Screen name="SignIn" component={SignInScreen} />
-      <AuthStack.Screen name="CharityAdmin" component={CharityAdminScreen} />
     </AuthStack.Navigator>
   );
 };
