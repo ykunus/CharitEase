@@ -68,10 +68,48 @@ app.post('/create-charity-account', async (req, res) => {
   }
 });
 
-// 2. Get charity account status
-app.get('/charity-account-status/:accountId', async (req, res) => {
+// 2. Get charity account status (POST version for mobile app compatibility)
+app.post('/charity-account-status', async (req, res) => {
   try {
-    const account = await stripe.accounts.retrieve(req.params.accountId);
+    const { account_id } = req.body;
+
+    if (!account_id) {
+      return res.status(400).json({
+        error: { message: 'Account ID is required' }
+      });
+    }
+
+    // Demo mode - return mock data for demo accounts
+    if (account_id.startsWith('acct_demo_')) {
+      console.log(`🎭 Demo mode: Returning mock status for ${account_id}`);
+      
+      // Mock different statuses for different demo accounts
+      const demoStatuses = {
+        'acct_demo_charity_1': { charges_enabled: true, payouts_enabled: true },
+        'acct_demo_charity_2': { charges_enabled: true, payouts_enabled: true },
+        'acct_demo_charity_4': { charges_enabled: true, payouts_enabled: true },
+        'acct_demo_charity_5': { charges_enabled: true, payouts_enabled: true },
+      };
+
+      const status = demoStatuses[account_id] || { charges_enabled: false, payouts_enabled: false };
+
+      return res.json({
+        account_id: account_id,
+        charges_enabled: status.charges_enabled,
+        payouts_enabled: status.payouts_enabled,
+        details_submitted: status.charges_enabled,
+        onboarding_complete: status.charges_enabled,
+        demo_mode: true,
+        requirements: status.charges_enabled ? { currently_due: [] } : { currently_due: ['business_profile.url'] },
+        business_profile: {
+          name: 'Demo Charity',
+          product_description: 'Charitable donations'
+        },
+      });
+    }
+
+    // Real Stripe account check (for production)
+    const account = await stripe.accounts.retrieve(account_id);
     
     res.json({
       account_id: account.id,
@@ -79,6 +117,64 @@ app.get('/charity-account-status/:accountId', async (req, res) => {
       payouts_enabled: account.payouts_enabled,
       details_submitted: account.details_submitted,
       onboarding_complete: account.charges_enabled && account.details_submitted,
+      demo_mode: false,
+      requirements: account.requirements,
+      business_profile: account.business_profile,
+    });
+  } catch (error) {
+    console.error('Account status check failed:', error);
+    res.status(400).json({ 
+      error: { 
+        message: error.message,
+        type: error.type 
+      } 
+    });
+  }
+});
+
+// 2b. Get charity account status (GET version for direct URL access)
+app.get('/charity-account-status/:accountId', async (req, res) => {
+  try {
+    const account_id = req.params.accountId;
+
+    // Demo mode - return mock data for demo accounts
+    if (account_id.startsWith('acct_demo_')) {
+      console.log(`🎭 Demo mode: Returning mock status for ${account_id}`);
+      
+      const demoStatuses = {
+        'acct_demo_charity_1': { charges_enabled: true, payouts_enabled: true },
+        'acct_demo_charity_2': { charges_enabled: true, payouts_enabled: true },
+        'acct_demo_charity_4': { charges_enabled: true, payouts_enabled: true },
+        'acct_demo_charity_5': { charges_enabled: true, payouts_enabled: true },
+      };
+
+      const status = demoStatuses[account_id] || { charges_enabled: false, payouts_enabled: false };
+
+      return res.json({
+        account_id: account_id,
+        charges_enabled: status.charges_enabled,
+        payouts_enabled: status.payouts_enabled,
+        details_submitted: status.charges_enabled,
+        onboarding_complete: status.charges_enabled,
+        demo_mode: true,
+        requirements: status.charges_enabled ? { currently_due: [] } : { currently_due: ['business_profile.url'] },
+        business_profile: {
+          name: 'Demo Charity',
+          product_description: 'Charitable donations'
+        },
+      });
+    }
+
+    // Real Stripe account check
+    const account = await stripe.accounts.retrieve(account_id);
+    
+    res.json({
+      account_id: account.id,
+      charges_enabled: account.charges_enabled,
+      payouts_enabled: account.payouts_enabled,
+      details_submitted: account.details_submitted,
+      onboarding_complete: account.charges_enabled && account.details_submitted,
+      demo_mode: false,
       requirements: account.requirements,
       business_profile: account.business_profile,
     });
@@ -96,7 +192,15 @@ app.get('/charity-account-status/:accountId', async (req, res) => {
 // 3. Create payment intent with destination (Stripe Connect)
 app.post('/create-donation-with-destination', async (req, res) => {
   try {
-    const { amount, charityAccountId, platformFeePercent = 2.5 } = req.body;
+    const { 
+      amount, 
+      destination_account, 
+      charityAccountId, // Legacy field name
+      platform_fee_percent = 2.5,
+      platformFeePercent = 2.5, // Legacy field name
+      charity_name,
+      donor_message 
+    } = req.body;
 
     if (!amount || amount < 50) {
       return res.status(400).json({
@@ -104,21 +208,65 @@ app.post('/create-donation-with-destination', async (req, res) => {
       });
     }
 
-    if (!charityAccountId) {
+    // Support both field names for account ID
+    const accountId = destination_account || charityAccountId;
+    if (!accountId) {
       return res.status(400).json({
-        error: { message: 'Charity account ID is required' }
+        error: { message: 'Charity account ID is required (destination_account or charityAccountId)' }
       });
     }
 
+    // Support both field names for fee percentage
+    const feePercent = platform_fee_percent || platformFeePercent;
+
+    // Demo mode for demo accounts
+    if (accountId.startsWith('acct_demo_')) {
+      console.log(`🎭 Demo mode: Creating payment intent for ${accountId}`);
+      
+      const platformFee = Math.round(amount * (feePercent / 100));
+      const charityAmount = amount - platformFee;
+
+      // Create regular payment intent (no Connect features for demo)
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        automatic_payment_methods: {
+          enabled: true,
+        },
+        metadata: {
+          source: 'CharitEase Mobile App (Demo Mode)',
+          demo_charity_account: accountId,
+          demo_platform_fee: platformFee,
+          demo_charity_amount: charityAmount,
+          demo_platform_fee_percent: feePercent,
+          charity_name: charity_name || 'Demo Charity',
+          donor_message: donor_message || 'Demo donation',
+        },
+      });
+
+      console.log(`💰 Demo donation payment intent: $${amount/100} (Fee: $${platformFee/100}, To charity: $${charityAmount/100})`);
+
+      return res.json({
+        client_secret: paymentIntent.client_secret,
+        payment_intent_id: paymentIntent.id,
+        platform_fee: platformFee,
+        charity_amount: charityAmount,
+        total_amount: amount,
+        demo_mode: true,
+        demo_note: 'This is a demo payment. No actual transfer to charity account.',
+      });
+    }
+
+    // Real Stripe Connect flow for production accounts
     // Verify charity account is ready
-    const account = await stripe.accounts.retrieve(charityAccountId);
+    const account = await stripe.accounts.retrieve(accountId);
     if (!account.charges_enabled) {
       return res.status(400).json({
         error: { message: 'Charity account is not ready to accept payments' }
       });
     }
 
-    const platformFee = Math.round(amount * (platformFeePercent / 100));
+    const platformFee = Math.round(amount * (feePercent / 100));
     const charityAmount = amount - platformFee;
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -126,21 +274,23 @@ app.post('/create-donation-with-destination', async (req, res) => {
       currency: 'usd',
       application_fee_amount: platformFee, // Your platform fee
       transfer_data: {
-        destination: charityAccountId, // Charity's account
+        destination: accountId, // Charity's account
       },
       automatic_payment_methods: {
         enabled: true,
       },
       metadata: {
         source: 'CharitEase Mobile App',
-        charity_account: charityAccountId,
+        charity_account: accountId,
         platform_fee: platformFee,
         charity_amount: charityAmount,
-        platform_fee_percent: platformFeePercent,
+        platform_fee_percent: feePercent,
+        charity_name: charity_name || 'Unknown Charity',
+        donor_message: donor_message || 'No message',
       },
     });
 
-    console.log(`💰 Created donation payment intent: $${amount/100} (Fee: $${platformFee/100}, To charity: $${charityAmount/100})`);
+    console.log(`💰 Real donation payment intent: $${amount/100} (Fee: $${platformFee/100}, To charity: $${charityAmount/100})`);
 
     res.json({
       client_secret: paymentIntent.client_secret,
@@ -148,6 +298,7 @@ app.post('/create-donation-with-destination', async (req, res) => {
       platform_fee: platformFee,
       charity_amount: charityAmount,
       total_amount: amount,
+      demo_mode: false,
     });
   } catch (error) {
     console.error('Donation payment intent creation failed:', error);

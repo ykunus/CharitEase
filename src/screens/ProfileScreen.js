@@ -12,14 +12,15 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { formatCurrency, formatDate } from '../utils/formatters';
-import LoadingSpinner from '../components/LoadingSpinner';
+import { formatCurrency, formatNumber, formatDate } from '../utils/formatters';
+import { supabase } from '../config/supabase';
+import ConfirmationModal from '../components/ConfirmationModal';
 import EmptyState from '../components/EmptyState';
-import PostCard from '../components/PostCard';
 
 const ProfileScreen = ({ navigation }) => {
   const { user, donations, posts, getCharityById, getFollowedCharitiesData, likePost } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('posts'); // 'posts' or 'donations' or 'following'
 
@@ -55,16 +56,54 @@ const ProfileScreen = ({ navigation }) => {
     navigation.navigate('Settings');
   };
 
-  const handleLike = (postId) => {
-    likePost(postId);
+  const handleSignOut = () => {
+    setShowSignOutModal(true);
   };
 
-  const handleComment = (post) => {
-    console.log('Comment on post:', post.id);
+  const confirmSignOut = async () => {
+    setShowSignOutModal(false);
+    await signOut();
+    // Navigation will be handled by the main app component
   };
 
-  const handleShare = (post) => {
-    console.log('Share post:', post.id);
+  const cancelSignOut = () => {
+    setShowSignOutModal(false);
+  };
+
+  const testDatabase = async () => {
+    try {
+      // Test 1: Check users table
+      const { data: users, error: usersError } = await supabase
+        .from('users')
+        .select('count')
+        .limit(1);
+
+      // Test 2: Check charities table
+      const { data: charities, error: charitiesError } = await supabase
+        .from('charities')
+        .select('name, country')
+        .limit(3);
+
+      // Test 3: Check posts table
+      const { data: posts, error: postsError } = await supabase
+        .from('posts')
+        .select('title, type')
+        .limit(3);
+
+      if (usersError || charitiesError || postsError) {
+        Alert.alert(
+          '❌ Database Test Failed',
+          `Users: ${usersError?.message || 'OK'}\nCharities: ${charitiesError?.message || 'OK'}\nPosts: ${postsError?.message || 'OK'}`
+        );
+      } else {
+        Alert.alert(
+          '✅ Database Test Successful!',
+          `✅ Users: ${users[0]?.count || 0} records\n✅ Charities: ${charities.length} records\n✅ Posts: ${posts.length} records\n\nDatabase is working perfectly!`
+        );
+      }
+    } catch (error) {
+      Alert.alert('❌ Database Connection Failed', error.message);
+    }
   };
 
   const renderCompactStat = (icon, value, label, color) => (
@@ -400,11 +439,20 @@ const ProfileScreen = ({ navigation }) => {
           />
         }
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {renderHeader()}
-        {renderTabContent()}
-      </ScrollView>
+        contentContainerStyle={styles.contentContainer}
+      />
+      
+      {/* Custom Sign Out Confirmation Modal - Better for screen mirroring */}
+      <ConfirmationModal
+        visible={showSignOutModal}
+        title="Sign Out"
+        message="Are you sure you want to sign out?"
+        confirmText="Sign Out"
+        cancelText="Cancel"
+        confirmStyle="destructive"
+        onConfirm={confirmSignOut}
+        onCancel={cancelSignOut}
+      />
     </SafeAreaView>
   );
 };

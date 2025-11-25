@@ -167,39 +167,7 @@ const DonationModal = ({ visible, charity, onClose, onDonate }) => {
     }
   };
 
-  // Show payment method selection
-  const handlePaymentMethodSelection = () => {
-    if (!amount || parseFloat(amount) <= 0) {
-      Alert.alert("Invalid Amount", "Please enter a valid donation amount.");
-      return;
-    }
-
-    const paymentOptions = [];
-
-    // Always show Apple Pay option on iOS (will redirect to card if not available)
-    // if (Platform.OS === 'ios') {
-    //   paymentOptions.push({
-    //     text: '🍎 Pay with Apple Pay',
-    //     onPress: handleApplePay,
-    //   });
-    // }
-
-    paymentOptions.push({
-      text: '💳 Pay with Card',
-      onPress: handleCardPayment,
-    });
-
-    paymentOptions.push({
-      text: 'Cancel',
-      style: 'cancel',
-    });
-
-    Alert.alert(
-      "Choose Payment Method",
-      `Select how you'd like to donate ${formatCurrency(parseFloat(amount))}`,
-      paymentOptions
-    );
-  };
+  // Donation flow now goes directly to Stripe payment sheet
   const handleClose = () => {
     setAmount("");
     setMessage("");
@@ -300,7 +268,7 @@ const DonationModal = ({ visible, charity, onClose, onDonate }) => {
               styles.donateButton,
               isProcessing && styles.donateButtonDisabled,
             ]}
-            onPress={handlePaymentMethodSelection}
+            onPress={handleCardPayment}
             disabled={isProcessing}
           >
             <Text style={styles.donateButtonText}>
