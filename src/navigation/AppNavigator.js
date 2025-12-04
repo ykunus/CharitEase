@@ -119,7 +119,7 @@ const MainTabs = () => {
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#22C55E',
+        tabBarActiveTintColor: isCharity ? '#10B981' : '#22C55E',
         tabBarInactiveTintColor: '#6B7280',
         tabBarStyle: {
           backgroundColor: '#FFFFFF',

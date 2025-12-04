@@ -440,7 +440,10 @@ const ProfileScreen = ({ navigation }) => {
         }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
-      />
+      >
+        {renderHeader()}
+        {renderTabContent()}
+      </ScrollView>
       
       {/* Custom Sign Out Confirmation Modal - Better for screen mirroring */}
       <ConfirmationModal

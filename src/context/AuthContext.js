@@ -27,6 +27,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     checkAuthState();
     testSupabaseConnection();
+    loadCharitiesFromDatabase();
   }, []);
 
   const checkAuthState = async () => {
@@ -219,6 +220,55 @@ export const AuthProvider = ({ children }) => {
       console.log('Error:', err.message);
       setIsConnected(false);
       return false;
+    }
+  };
+
+  const loadCharitiesFromDatabase = async () => {
+    try {
+      console.log('🔄 Loading charities from database...');
+      const { data: charitiesFromDB, error } = await supabase
+        .from('charities')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.log('⚠️ Failed to load charities:', error.message);
+        return;
+      }
+      
+      if (charitiesFromDB && charitiesFromDB.length > 0) {
+        // Transform database format to app format
+        const formattedCharities = charitiesFromDB.map(charity => ({
+          id: charity.id,
+          name: charity.name,
+          category: charity.category,
+          country: charity.country,
+          location: {
+            city: charity.country,
+            country: charity.country,
+            latitude: 0,
+            longitude: 0
+          },
+          founded: charity.founded_year,
+          verified: charity.verified,
+          logo: charity.logo_url,
+          coverImage: charity.cover_image_url,
+          mission: charity.mission,
+          website: charity.website,
+          phone: charity.phone,
+          address: charity.address,
+          totalRaised: charity.total_raised || 0,
+          followers: charity.followers || 0,
+          impact: charity.impact || {}
+        }));
+        
+        setCharitiesData(formattedCharities);
+        console.log(`✅ Loaded ${formattedCharities.length} charities from database`);
+      } else {
+        console.log('ℹ️ No charities found in database');
+      }
+    } catch (err) {
+      console.log('⚠️ Error loading charities:', err.message);
     }
   };
 
