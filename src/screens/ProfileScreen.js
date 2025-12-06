@@ -42,16 +42,35 @@ const ProfileScreen = ({ navigation }) => {
 
   // Get user's or charity's posts
   const userPosts = useMemo(() => {
-    if (!posts || !user) return [];
-    return posts.filter(post => {
-      if (isCharity) {
-        // Charity posts: match charity database ID (not auth user.id)
-        return post.charityId === charityDbId;
-      } else {
-        // User posts: charityId is null for user posts, check userId if available
-        return post.charityId === null && (post.userId === user.id || post.userId === undefined);
-      }
-    }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    if (!user) return [];
+    
+    // Use user.posts array if available (most reliable)
+    if (user.posts && Array.isArray(user.posts) && user.posts.length > 0) {
+      // user.posts is already an array of post objects, just sort them
+      return [...user.posts].sort((a, b) => {
+        const dateA = new Date(a.timestamp || 0);
+        const dateB = new Date(b.timestamp || 0);
+        return dateB - dateA;
+      });
+    }
+    
+    // Fallback: filter from global posts array
+    if (!posts) return [];
+    
+    if (isCharity) {
+      // Charity posts: match charity database ID
+      return posts.filter(post => post.charityId === charityDbId)
+        .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+    } else {
+      // User posts: check userId or charityId === null
+      const userPostIds = user.posts ? user.posts.map(p => typeof p === 'object' ? p.id : p) : [];
+      return posts.filter(post => {
+        const postIdStr = String(post.id);
+        return userPostIds.includes(postIdStr) || 
+               (post.charityId === null && post.userId === user.id) ||
+               (post.charityId === null && userPostIds.length === 0);
+      }).sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+    }
   }, [posts, user, isCharity, charityDbId]);
 
   const onRefresh = useCallback(() => {

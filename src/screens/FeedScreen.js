@@ -80,9 +80,33 @@ const FeedScreen = ({ navigation }) => {
   }, [posts]);
 
   const followingPosts = useMemo(() => {
-    if (!sortedPosts.length || !followedCharities?.length) return [];
-    return sortedPosts.filter((post) => followedCharities.includes(post.charityId));
-  }, [sortedPosts, followedCharities]);
+    if (!sortedPosts.length || !user) return [];
+    
+    // Get user's post IDs from their posts array
+    const userPostIds = [];
+    if (user.posts && Array.isArray(user.posts)) {
+      user.posts.forEach(p => {
+        const id = typeof p === 'object' && p.id ? p.id : (typeof p === 'string' ? p : null);
+        if (id) userPostIds.push(String(id));
+      });
+    }
+    
+    // Include posts from followed charities AND user's own posts
+    return sortedPosts.filter((post) => {
+      const postIdStr = String(post.id);
+      
+      // User's own posts - check if post ID is in user's posts array
+      const isUserPost = userPostIds.includes(postIdStr) || 
+                         (post.charityId === null && post.userId === user.id);
+      
+      // Posts from followed charities
+      const isFollowedCharityPost = followedCharities?.length > 0 && 
+                                     post.charityId && 
+                                     followedCharities.includes(post.charityId);
+      
+      return isUserPost || isFollowedCharityPost;
+    });
+  }, [sortedPosts, followedCharities, user]);
 
   const localFeed = useMemo(() => {
     if (!sortedPosts.length || !charitiesData?.length || !userLocation) {
@@ -156,8 +180,18 @@ const FeedScreen = ({ navigation }) => {
   };
 
   const renderPost = ({ item: post }) => {
-    const charity = getCharityById(post.charityId);
-    if (!charity) return null;
+    // For charity posts, get charity info
+    const charity = post.charityId ? getCharityById(post.charityId) : null;
+    
+    // For user posts (no charity), create a mock charity object from user
+    const postAuthor = charity || (post.charityId === null && user ? {
+      id: user.id,
+      name: user.name,
+      logo: user.avatar,
+      verified: false
+    } : null);
+
+    if (!postAuthor) return null;
 
     const distanceFromUser =
       selectedTab === 'local' && typeof localDistances[post.id] === 'number'
@@ -174,7 +208,7 @@ const FeedScreen = ({ navigation }) => {
         )}
         <PostCard
           post={post}
-          charity={charity}
+          charity={postAuthor}
           onLike={handleLike}
           onComment={() => handleComment(post)}
           onShare={() => handleShare(post)}

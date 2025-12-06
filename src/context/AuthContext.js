@@ -760,6 +760,18 @@ export const AuthProvider = ({ children }) => {
       // Add to local posts state (prepend to show at top) - no need to reload
       setPosts(prev => [formattedPost, ...prev]);
 
+      // Update user's local posts array so it appears in following feed immediately
+      if (user.userType === 'user') {
+        setUser(prevUser => {
+          if (!prevUser) return prevUser;
+          const currentUserPosts = Array.isArray(prevUser.posts) ? prevUser.posts : [];
+          return {
+            ...prevUser,
+            posts: [formattedPost, ...currentUserPosts]
+          };
+        });
+      }
+
       return formattedPost;
     } catch (error) {
       console.error('Create post error:', error);

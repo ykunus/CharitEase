@@ -33,7 +33,7 @@ const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress })
           <Image source={{ uri: charity.logo }} style={styles.charityLogo} />
           <View style={styles.charityDetails}>
             <Text style={styles.charityName}>{charity.name}</Text>
-            <Text style={styles.postTime}>{formatDate(post.timestamp)}</Text>
+            <Text style={styles.postTime}>{formatDate(post.timestamp || new Date().toISOString())}</Text>
           </View>
         </TouchableOpacity>
         <View style={styles.postTypeContainer}>
@@ -61,17 +61,17 @@ const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress })
       <View style={styles.engagement}>
         <TouchableOpacity style={styles.engagementButton} onPress={handleLike}>
           <Ionicons name="heart-outline" size={20} color="#6B7280" />
-          <Text style={styles.engagementText}>{post.likes}</Text>
+          <Text style={styles.engagementText}>{post.likes || 0}</Text>
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.engagementButton} onPress={onComment}>
           <Ionicons name="chatbubble-outline" size={20} color="#6B7280" />
-          <Text style={styles.engagementText}>{post.comments}</Text>
+          <Text style={styles.engagementText}>{post.comments || 0}</Text>
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.engagementButton} onPress={onShare}>
           <Ionicons name="share-outline" size={20} color="#6B7280" />
-          <Text style={styles.engagementText}>{post.shares}</Text>
+          <Text style={styles.engagementText}>{post.shares || 0}</Text>
         </TouchableOpacity>
       </View>
     </View>
