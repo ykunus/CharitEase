@@ -106,8 +106,10 @@ export const AuthProvider = ({ children }) => {
           
           if (existingUser) {
             userDbId = existingUser.id;
+            console.log('✅ Found existing user entry for charity');
           } else {
             // Create user entry for charity to enable likes/comments
+            // Note: posts column doesn't exist in users table (posts are tracked differently)
             const { data: newUser, error: userError } = await supabase
               .from('users')
               .insert([{
@@ -118,16 +120,37 @@ export const AuthProvider = ({ children }) => {
                 avatar_url: charityProfile.logo_url,
                 total_donated: 0,
                 total_donations: 0,
-                followed_charities: [],
-                posts: []
+                followed_charities: []
+                // posts field removed - not a column in users table
               }])
               .select('id')
               .single();
             
-            if (!userError && newUser) {
+            if (userError) {
+              console.error('❌ Failed to create user entry for charity:', userError);
+              // Try to get it again in case it was created by another process
+              const { data: retryUser } = await supabase
+                .from('users')
+                .select('id')
+                .eq('email', supabaseUser.email)
+                .single();
+              if (retryUser) {
+                userDbId = retryUser.id;
+                console.log('✅ Found user entry on retry');
+              } else {
+                throw new Error('Failed to create or find user entry for charity. Cannot proceed.');
+              }
+            } else if (newUser) {
               userDbId = newUser.id;
               console.log('✅ Created user entry for charity');
+            } else {
+              throw new Error('Failed to create user entry for charity. Cannot proceed.');
             }
+          }
+
+          // Ensure we have a valid users table ID
+          if (!userDbId) {
+            throw new Error('No valid users table ID found for charity. Cannot proceed.');
           }
 
           // Load charity's posts if they have any
@@ -157,7 +180,7 @@ export const AuthProvider = ({ children }) => {
           }
           
           setUser({
-            id: userDbId || supabaseUser.id, // Use users table ID for likes/comments, fallback to auth ID
+            id: userDbId, // Use users table ID for likes/comments (required, no fallback)
             dbId: userDbId, // Store the users table ID separately
             email: supabaseUser.email,
             name: charityProfile.name,
@@ -291,7 +314,7 @@ export const AuthProvider = ({ children }) => {
 
           if (createdProfile) {
             setUser({
-              id: supabaseUser.id,
+              id: createdProfile.id, // Use users table ID for likes/comments
               email: supabaseUser.email,
               name: createdProfile.name,
               country: createdProfile.country,
@@ -576,8 +599,8 @@ export const AuthProvider = ({ children }) => {
           avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face',
           total_donated: 0,
           total_donations: 0,
-          followed_charities: [],
-          posts: []
+          followed_charities: []
+          // posts field removed - not a column in users table
         };
 
         const { error: userEntryError } = await supabase
@@ -907,6 +930,40 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
+    // Ensure we're using the users table ID, not the auth ID
+    // user.id should already be the users table ID
+    const userId = user.id || user.dbId; // Use dbId as fallback if available
+    if (!userId) {
+      console.error('⚠️ No user ID available for liking post');
+      return;
+    }
+
+    // Verify the user ID exists in the users table before attempting to like
+    // This prevents foreign key violations
+    try {
+      const { data: userCheck, error: checkError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .single();
+
+      if (checkError || !userCheck) {
+        console.error('❌ User ID not found in users table:', userId, checkError);
+        console.log('⚠️ User object:', { id: user.id, dbId: user.dbId, email: user.email, userType: user.userType });
+        // Try to fix by reloading user profile
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          console.log('🔄 Attempting to reload user profile to fix ID...');
+          await loadUserProfile(session.user);
+          console.log('✅ Please try liking the post again');
+        }
+        return;
+      }
+    } catch (verifyError) {
+      console.error('❌ Error verifying user ID:', verifyError);
+      return;
+    }
+
     // Check if user already liked this post
     const isLiked = likedPosts.includes(postId);
     
@@ -916,7 +973,7 @@ export const AuthProvider = ({ children }) => {
         const { error } = await supabase
           .from('likes')
           .delete()
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('post_id', postId);
 
         if (error) throw error;
@@ -935,7 +992,7 @@ export const AuthProvider = ({ children }) => {
         const { error } = await supabase
           .from('likes')
           .insert([{
-            user_id: user.id,
+            user_id: userId,
             post_id: postId
           }]);
 
@@ -982,14 +1039,15 @@ export const AuthProvider = ({ children }) => {
       if (error) throw error;
 
       // Format comment for app
+      // user.name and user.avatar are already set correctly for both users and charities
       const formattedComment = {
         id: newComment.id,
         userId: newComment.user_id,
         postId: newComment.post_id,
         content: newComment.content,
         timestamp: newComment.created_at,
-        userName: user.name,
-        userAvatar: user.avatar
+        userName: user.name || 'Unknown',
+        userAvatar: user.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face'
       };
 
       // Update comments state
@@ -1028,7 +1086,7 @@ export const AuthProvider = ({ children }) => {
         const userIds = [...new Set(commentsData.map(c => c.user_id))];
         const { data: usersData } = await supabase
           .from('users')
-          .select('id, name, avatar_url')
+          .select('id, name, avatar_url, email, user_type')
           .in('id', userIds);
         
         const userMap = {};
@@ -1038,16 +1096,49 @@ export const AuthProvider = ({ children }) => {
           });
         }
 
+        // Get charity info for charity commenters
+        const charityUserIds = usersData?.filter(u => u.user_type === 'charity').map(u => u.id) || [];
+        const charityEmails = usersData?.filter(u => u.user_type === 'charity').map(u => u.email) || [];
+        const charityMap = {};
+        
+        if (charityEmails.length > 0) {
+          const { data: charitiesData } = await supabase
+            .from('charities')
+            .select('id, name, logo_url, email')
+            .in('email', charityEmails);
+          
+          if (charitiesData) {
+            charitiesData.forEach(charity => {
+              // Find the user ID that matches this charity
+              const matchingUser = usersData?.find(u => u.email === charity.email && u.user_type === 'charity');
+              if (matchingUser) {
+                charityMap[matchingUser.id] = {
+                  name: charity.name,
+                  avatar: charity.logo_url
+                };
+              }
+            });
+          }
+        }
+
         const formattedComments = commentsData.map(comment => {
           const commentUser = userMap[comment.user_id];
+          const isCharity = commentUser?.user_type === 'charity';
+          const charityInfo = charityMap[comment.user_id];
+          
+          // Use charity info if available, otherwise use user info
           return {
             id: comment.id,
             userId: comment.user_id,
             postId: comment.post_id,
             content: comment.content,
             timestamp: comment.created_at,
-            userName: commentUser?.name || 'Unknown',
-            userAvatar: commentUser?.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face'
+            userName: isCharity && charityInfo 
+              ? charityInfo.name 
+              : (commentUser?.name || 'Unknown'),
+            userAvatar: isCharity && charityInfo 
+              ? charityInfo.avatar 
+              : (commentUser?.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face')
           };
         });
 
