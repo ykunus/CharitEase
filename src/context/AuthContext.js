@@ -93,6 +93,32 @@ export const AuthProvider = ({ children }) => {
           .single();
 
         if (charityProfile) {
+          // Load charity's posts if they have any
+          let charityPosts = [];
+          if (charityProfile.posts && Array.isArray(charityProfile.posts) && charityProfile.posts.length > 0) {
+            const { data: postsData, error: postsError } = await supabase
+              .from('posts')
+              .select('*')
+              .in('id', charityProfile.posts)
+              .order('created_at', { ascending: false });
+            
+            if (!postsError && postsData) {
+              charityPosts = postsData.map(post => ({
+                id: post.id,
+                charityId: post.charity_id,
+                userId: post.user_id || null,
+                type: post.type,
+                title: post.title,
+                content: post.content,
+                image: post.image_url,
+                likes: post.likes_count || 0,
+                comments: post.comments_count || 0,
+                shares: post.shares_count || 0,
+                timestamp: post.created_at
+              }));
+            }
+          }
+          
           setUser({
             id: supabaseUser.id,
             email: supabaseUser.email,
@@ -103,6 +129,7 @@ export const AuthProvider = ({ children }) => {
             totalDonated: 0, // Charities don't donate
             totalDonations: 0,
             followedCharities: [],
+            posts: charityPosts,
             joinedDate: charityProfile.created_at || new Date().toISOString(),
             userType: 'charity',
             mission: charityProfile.mission || '',
@@ -117,6 +144,7 @@ export const AuthProvider = ({ children }) => {
           });
           setIsAuthenticated(true);
           setIsConnected(true);
+          console.log(`✅ Loaded ${charityPosts.length} posts for charity`);
         }
       } else {
         // Load regular user profile
@@ -131,6 +159,32 @@ export const AuthProvider = ({ children }) => {
             ? profile.followed_charities 
             : [];
           
+          // Load user's posts if they have any
+          let userPosts = [];
+          if (profile.posts && Array.isArray(profile.posts) && profile.posts.length > 0) {
+            const { data: postsData, error: postsError } = await supabase
+              .from('posts')
+              .select('*')
+              .in('id', profile.posts)
+              .order('created_at', { ascending: false });
+            
+            if (!postsError && postsData) {
+              userPosts = postsData.map(post => ({
+                id: post.id,
+                charityId: post.charity_id,
+                userId: post.user_id || null,
+                type: post.type,
+                title: post.title,
+                content: post.content,
+                image: post.image_url,
+                likes: post.likes_count || 0,
+                comments: post.comments_count || 0,
+                shares: post.shares_count || 0,
+                timestamp: post.created_at
+              }));
+            }
+          }
+          
           setUser({
             id: supabaseUser.id,
             email: supabaseUser.email,
@@ -141,6 +195,7 @@ export const AuthProvider = ({ children }) => {
             totalDonated: profile.total_donated || 0,
             totalDonations: profile.total_donations || 0,
             followedCharities: followedList,
+            posts: userPosts,
             joinedDate: profile.created_at || new Date().toISOString(),
             userType: 'user'
           });
@@ -150,7 +205,7 @@ export const AuthProvider = ({ children }) => {
           setIsAuthenticated(true);
           setIsConnected(true);
           
-          console.log(`✅ Loaded ${followedList.length} followed charities from database`);
+          console.log(`✅ Loaded ${followedList.length} followed charities and ${userPosts.length} posts from database`);
         } else {
           // Create profile if it doesn't exist
           const newProfile = {
@@ -247,12 +302,41 @@ export const AuthProvider = ({ children }) => {
       }
       
       if (charitiesFromDB && charitiesFromDB.length > 0) {
+        // Load posts for each charity
+        const charityPostsMap = {};
+        for (const charity of charitiesFromDB) {
+          if (charity.posts && Array.isArray(charity.posts) && charity.posts.length > 0) {
+            const { data: charityPosts, error: postsError } = await supabase
+              .from('posts')
+              .select('*')
+              .in('id', charity.posts)
+              .order('created_at', { ascending: false });
+            
+            if (!postsError && charityPosts) {
+              charityPostsMap[charity.id] = charityPosts.map(post => ({
+                id: post.id,
+                charityId: post.charity_id,
+                userId: post.user_id || null,
+                type: post.type,
+                title: post.title,
+                content: post.content,
+                image: post.image_url,
+                likes: post.likes_count || 0,
+                comments: post.comments_count || 0,
+                shares: post.shares_count || 0,
+                timestamp: post.created_at
+              }));
+            }
+          }
+        }
+
         // Transform database format to app format
         const formattedCharities = charitiesFromDB.map(charity => ({
           id: charity.id,
           name: charity.name,
           category: charity.category,
           country: charity.country,
+          email: charity.email,
           location: {
             city: charity.country,
             country: charity.country,
@@ -269,7 +353,8 @@ export const AuthProvider = ({ children }) => {
           address: charity.address,
           totalRaised: charity.total_raised || 0,
           followers: charity.followers || 0,
-          impact: charity.impact || {}
+          impact: charity.impact || {},
+          posts: charityPostsMap[charity.id] || []
         }));
         
         setCharitiesData(formattedCharities);
@@ -369,7 +454,8 @@ export const AuthProvider = ({ children }) => {
           address: additionalData.address || '',
           total_raised: 0,
           followers: 0,
-          impact: {}
+          impact: {},
+          posts: [] // Initialize empty posts array
         };
 
         const { data: charity, error: charityError } = await supabase
@@ -422,7 +508,8 @@ export const AuthProvider = ({ children }) => {
           avatar_url: null,
           total_donated: 0,
           total_donations: 0,
-          user_type: 'user'
+          user_type: 'user',
+          posts: [] // Initialize empty posts array
         };
 
         const { data: profile, error: profileError } = await supabase
@@ -617,6 +704,43 @@ export const AuthProvider = ({ children }) => {
       }
 
       console.log('✅ Post created in database');
+
+      // Update user's/charity's posts array in database
+      if (user.userType === 'charity') {
+        // Update charity's posts array
+        const { data: currentCharity, error: charityFetchError } = await supabase
+          .from('charities')
+          .select('posts')
+          .eq('id', charityId)
+          .single();
+
+        if (!charityFetchError && currentCharity) {
+          const currentPosts = Array.isArray(currentCharity.posts) ? currentCharity.posts : [];
+          const updatedPosts = [newPost.id, ...currentPosts];
+
+          await supabase
+            .from('charities')
+            .update({ posts: updatedPosts })
+            .eq('id', charityId);
+        }
+      } else {
+        // Update user's posts array
+        const { data: currentUser, error: userFetchError } = await supabase
+          .from('users')
+          .select('posts')
+          .eq('email', user.email)
+          .single();
+
+        if (!userFetchError && currentUser) {
+          const currentPosts = Array.isArray(currentUser.posts) ? currentUser.posts : [];
+          const updatedPosts = [newPost.id, ...currentPosts];
+
+          await supabase
+            .from('users')
+            .update({ posts: updatedPosts })
+            .eq('email', user.email);
+        }
+      }
 
       // Format post for app
       const formattedPost = {

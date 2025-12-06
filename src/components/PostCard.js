@@ -52,7 +52,9 @@ const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress })
 
       {/* Image */}
       {post.image && (
-        <Image source={{ uri: post.image }} style={styles.postImage} />
+        <View style={styles.imageContainer}>
+          <Image source={{ uri: post.image }} style={styles.postImage} resizeMode="cover" />
+        </View>
       )}
 
       {/* Engagement */}
@@ -149,12 +151,17 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: '#374151',
   },
-  postImage: {
-    width: width - 32,
-    height: 200,
-    marginHorizontal: 16,
-    borderRadius: 8,
+  imageContainer: {
+    paddingHorizontal: 16,
     marginBottom: 12,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  postImage: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    maxHeight: 300,
+    borderRadius: 8,
   },
   engagement: {
     flexDirection: 'row',
