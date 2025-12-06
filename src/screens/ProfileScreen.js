@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,27 +16,64 @@ import { formatCurrency, formatNumber, formatDate } from '../utils/formatters';
 import { supabase } from '../config/supabase';
 import ConfirmationModal from '../components/ConfirmationModal';
 import EmptyState from '../components/EmptyState';
+import PostCard from '../components/PostCard';
+import CommentModal from '../components/CommentModal';
 
 const ProfileScreen = ({ navigation }) => {
-  const { user, donations, posts, getCharityById, getFollowedCharitiesData, likePost } = useAuth();
+  const { user, donations, posts, charitiesData, getCharityById, getFollowedCharitiesData, likePost, likedPosts } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('posts'); // 'posts' or 'donations' or 'following'
+  const [charityDbId, setCharityDbId] = useState(null);
+  const [commentModalPost, setCommentModalPost] = useState(null);
 
   const isCharity = user?.userType === 'charity';
   const followedCharities = getFollowedCharitiesData();
 
+  // Get charity database ID for matching posts
+  useEffect(() => {
+    if (isCharity && user?.email && charitiesData?.length > 0) {
+      // Find charity by email match
+      const charity = charitiesData.find(c => c.email === user.email);
+      if (charity) {
+        setCharityDbId(charity.id);
+      }
+    }
+  }, [isCharity, user?.email, charitiesData]);
+
   // Get user's or charity's posts
   const userPosts = useMemo(() => {
+    if (!user) return [];
+    
+    // Use user.posts array if available (most reliable)
+    if (user.posts && Array.isArray(user.posts) && user.posts.length > 0) {
+      // user.posts is already an array of post objects, just sort them
+      return [...user.posts].sort((a, b) => {
+        const dateA = new Date(a.timestamp || 0);
+        const dateB = new Date(b.timestamp || 0);
+        return dateB - dateA;
+      });
+    }
+    
+    // Fallback: filter from global posts array
     if (!posts) return [];
-    return posts.filter(post => {
-      if (isCharity) {
-        return post.charityId === user.id;
-      }
-      return false; // Regular users don't create posts currently
-    }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  }, [posts, user, isCharity]);
+    
+    if (isCharity) {
+      // Charity posts: match charity database ID
+      return posts.filter(post => post.charityId === charityDbId)
+        .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+    } else {
+      // User posts: check userId or charityId === null
+      const userPostIds = user.posts ? user.posts.map(p => typeof p === 'object' ? p.id : p) : [];
+      return posts.filter(post => {
+        const postIdStr = String(post.id);
+        return userPostIds.includes(postIdStr) || 
+               (post.charityId === null && post.userId === user.id) ||
+               (post.charityId === null && userPostIds.length === 0);
+      }).sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+    }
+  }, [posts, user, isCharity, charityDbId]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -44,6 +81,19 @@ const ProfileScreen = ({ navigation }) => {
       setRefreshing(false);
     }, 1500);
   }, []);
+
+  const handleLike = (postId) => {
+    likePost(postId);
+  };
+
+  const handleComment = (post) => {
+    setCommentModalPost(post);
+  };
+
+  const handleShare = (post) => {
+    // Handle sharing functionality
+    console.log('Share post:', post.id);
+  };
 
   const handleCharityPress = (charity) => {
     navigation.navigate('Charities', {
@@ -335,13 +385,24 @@ const ProfileScreen = ({ navigation }) => {
   );
 
   const renderPost = ({ item: post }) => {
-    const charity = getCharityById(post.charityId);
-    if (!charity) return null;
+    // For charity posts, get charity info
+    const charity = post.charityId ? getCharityById(post.charityId) : null;
+    
+    // For user posts (no charity), create a mock charity object from user
+    const postAuthor = charity || (post.charityId === null ? {
+      id: user.id,
+      name: user.name,
+      logo: user.avatar,
+      verified: false
+    } : null);
+
+    if (!postAuthor) return null;
 
     return (
       <PostCard
         post={post}
-        charity={charity}
+        charity={postAuthor}
+        isLiked={likedPosts?.includes(post.id)}
         onLike={handleLike}
         onComment={() => handleComment(post)}
         onShare={() => handleShare(post)}
@@ -361,12 +422,12 @@ const ProfileScreen = ({ navigation }) => {
           />
         );
       }
-      if (!isCharity) {
+      if (!isCharity && userPosts.length === 0) {
         return (
           <EmptyState
             icon="grid-outline"
-            title="No posts"
-            message="Users don't create posts. Check out the Feed to see updates from charities you follow!"
+            title="No posts yet"
+            message="Share your thoughts and experiences with the community!"
           />
         );
       }
@@ -455,6 +516,13 @@ const ProfileScreen = ({ navigation }) => {
         confirmStyle="destructive"
         onConfirm={confirmSignOut}
         onCancel={cancelSignOut}
+      />
+      
+      {/* Comment Modal */}
+      <CommentModal
+        visible={commentModalPost !== null}
+        post={commentModalPost}
+        onClose={() => setCommentModalPost(null)}
       />
     </SafeAreaView>
   );

@@ -12,7 +12,7 @@ import { formatDate, getPostTypeIcon, getPostTypeColor } from '../utils/formatte
 
 const { width } = Dimensions.get('window');
 
-const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress }) => {
+const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress, isLiked = false }) => {
   const handleLike = () => {
     if (onLike) {
       onLike(post.id);
@@ -33,7 +33,7 @@ const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress })
           <Image source={{ uri: charity.logo }} style={styles.charityLogo} />
           <View style={styles.charityDetails}>
             <Text style={styles.charityName}>{charity.name}</Text>
-            <Text style={styles.postTime}>{formatDate(post.timestamp)}</Text>
+            <Text style={styles.postTime}>{formatDate(post.timestamp || new Date().toISOString())}</Text>
           </View>
         </TouchableOpacity>
         <View style={styles.postTypeContainer}>
@@ -52,24 +52,32 @@ const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress })
 
       {/* Image */}
       {post.image && (
-        <Image source={{ uri: post.image }} style={styles.postImage} />
+        <View style={styles.imageContainer}>
+          <Image source={{ uri: post.image }} style={styles.postImage} resizeMode="cover" />
+        </View>
       )}
 
       {/* Engagement */}
       <View style={styles.engagement}>
         <TouchableOpacity style={styles.engagementButton} onPress={handleLike}>
-          <Ionicons name="heart-outline" size={20} color="#6B7280" />
-          <Text style={styles.engagementText}>{post.likes}</Text>
+          <Ionicons 
+            name={isLiked ? "heart" : "heart-outline"} 
+            size={20} 
+            color={isLiked ? "#EF4444" : "#6B7280"} 
+          />
+          <Text style={[styles.engagementText, isLiked && styles.engagementTextLiked]}>
+            {post.likes || 0}
+          </Text>
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.engagementButton} onPress={onComment}>
           <Ionicons name="chatbubble-outline" size={20} color="#6B7280" />
-          <Text style={styles.engagementText}>{post.comments}</Text>
+          <Text style={styles.engagementText}>{post.comments || 0}</Text>
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.engagementButton} onPress={onShare}>
           <Ionicons name="share-outline" size={20} color="#6B7280" />
-          <Text style={styles.engagementText}>{post.shares}</Text>
+          <Text style={styles.engagementText}>{post.shares || 0}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -149,12 +157,17 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: '#374151',
   },
-  postImage: {
-    width: width - 32,
-    height: 200,
-    marginHorizontal: 16,
-    borderRadius: 8,
+  imageContainer: {
+    paddingHorizontal: 16,
     marginBottom: 12,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  postImage: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    maxHeight: 300,
+    borderRadius: 8,
   },
   engagement: {
     flexDirection: 'row',
@@ -176,6 +189,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
     fontWeight: '500',
+  },
+  engagementTextLiked: {
+    color: '#EF4444',
   },
 });
 
