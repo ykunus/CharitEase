@@ -96,17 +96,23 @@ export const AuthProvider = ({ children }) => {
 
         if (charityProfile) {
           // Ensure charity has a corresponding entry in users table for likes/comments
-          // Check if user entry exists
+          // Check if user entry exists and load followed_charities
           let userDbId = null;
+          let charityFollowedList = [];
           const { data: existingUser } = await supabase
             .from('users')
-            .select('id')
+            .select('id, followed_charities')
             .eq('email', supabaseUser.email)
             .single();
           
           if (existingUser) {
             userDbId = existingUser.id;
+            // Load followed charities from users table
+            charityFollowedList = Array.isArray(existingUser.followed_charities) 
+              ? existingUser.followed_charities 
+              : [];
             console.log('✅ Found existing user entry for charity');
+            console.log(`✅ Loaded ${charityFollowedList.length} followed charities for charity`);
           } else {
             // Create user entry for charity to enable likes/comments
             // Note: posts column doesn't exist in users table (posts are tracked differently)
@@ -189,7 +195,7 @@ export const AuthProvider = ({ children }) => {
             avatar: charityProfile.logo_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
             totalDonated: 0, // Charities don't donate
             totalDonations: 0,
-            followedCharities: [],
+            followedCharities: charityFollowedList, // Load from users table
             posts: charityPosts,
             joinedDate: charityProfile.created_at || new Date().toISOString(),
             userType: 'charity',
@@ -205,6 +211,9 @@ export const AuthProvider = ({ children }) => {
           });
           setIsAuthenticated(true);
           setIsConnected(true);
+          
+          // Set followed charities state for charity accounts
+          setFollowedCharities(charityFollowedList);
           
           // Load charity's liked posts using the users table ID
           if (userDbId) {
@@ -757,10 +766,12 @@ export const AuthProvider = ({ children }) => {
           return typeof id === 'string' ? id : String(id);
         });
 
+        // Update using user.id (users table ID) for better reliability
+        // This works for both regular users and charities
         const { error } = await supabase
           .from('users')
           .update({ followed_charities: charityUuids })
-          .eq('email', user.email);
+          .eq('id', user.id); // Use ID instead of email for more reliable updates
 
         if (error) {
           console.error('Failed to update followed charities in database:', error);
