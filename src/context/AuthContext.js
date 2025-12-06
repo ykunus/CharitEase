@@ -27,6 +27,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     checkAuthState();
     testSupabaseConnection();
+    loadCharitiesFromDatabase();
   }, []);
 
   const checkAuthState = async () => {
@@ -125,6 +126,10 @@ export const AuthProvider = ({ children }) => {
           .single();
 
         if (profile) {
+          const followedList = Array.isArray(profile.followed_charities) 
+            ? profile.followed_charities 
+            : [];
+          
           setUser({
             id: supabaseUser.id,
             email: supabaseUser.email,
@@ -134,12 +139,17 @@ export const AuthProvider = ({ children }) => {
             avatar: profile.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
             totalDonated: profile.total_donated || 0,
             totalDonations: profile.total_donations || 0,
-            followedCharities: profile.followed_charities || [],
+            followedCharities: followedList,
             joinedDate: profile.created_at || new Date().toISOString(),
             userType: 'user'
           });
+          
+          // Set followed charities state
+          setFollowedCharities(followedList);
           setIsAuthenticated(true);
           setIsConnected(true);
+          
+          console.log(`✅ Loaded ${followedList.length} followed charities from database`);
         } else {
           // Create profile if it doesn't exist
           const newProfile = {
@@ -219,6 +229,55 @@ export const AuthProvider = ({ children }) => {
       console.log('Error:', err.message);
       setIsConnected(false);
       return false;
+    }
+  };
+
+  const loadCharitiesFromDatabase = async () => {
+    try {
+      console.log('🔄 Loading charities from database...');
+      const { data: charitiesFromDB, error } = await supabase
+        .from('charities')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.log('⚠️ Failed to load charities:', error.message);
+        return;
+      }
+      
+      if (charitiesFromDB && charitiesFromDB.length > 0) {
+        // Transform database format to app format
+        const formattedCharities = charitiesFromDB.map(charity => ({
+          id: charity.id,
+          name: charity.name,
+          category: charity.category,
+          country: charity.country,
+          location: {
+            city: charity.country,
+            country: charity.country,
+            latitude: 0,
+            longitude: 0
+          },
+          founded: charity.founded_year,
+          verified: charity.verified,
+          logo: charity.logo_url,
+          coverImage: charity.cover_image_url,
+          mission: charity.mission,
+          website: charity.website,
+          phone: charity.phone,
+          address: charity.address,
+          totalRaised: charity.total_raised || 0,
+          followers: charity.followers || 0,
+          impact: charity.impact || {}
+        }));
+        
+        setCharitiesData(formattedCharities);
+        console.log(`✅ Loaded ${formattedCharities.length} charities from database`);
+      } else {
+        console.log('ℹ️ No charities found in database');
+      }
+    } catch (err) {
+      console.log('⚠️ Error loading charities:', err.message);
     }
   };
 
@@ -402,32 +461,50 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const followCharity = (charityId) => {
-    setFollowedCharities((prev) => {
-      const currentFollowed = Array.isArray(prev) ? prev : [];
-      const isFollowing = currentFollowed.includes(charityId);
-      const updatedFollowed = isFollowing
-        ? currentFollowed.filter((id) => id !== charityId)
-        : [...currentFollowed, charityId];
+  const followCharity = async (charityId) => {
+    const currentFollowed = Array.isArray(followedCharities) ? followedCharities : [];
+    const isFollowing = currentFollowed.includes(charityId);
+    const updatedFollowed = isFollowing
+      ? currentFollowed.filter((id) => id !== charityId)
+      : [...currentFollowed, charityId];
 
-      setUser((prevUser) => {
-        if (!prevUser) return prevUser;
-
-        const userFollowed = Array.isArray(prevUser.followedCharities)
-          ? prevUser.followedCharities
-          : [];
-        const nextUserFollowed = isFollowing
-          ? userFollowed.filter((id) => id !== charityId)
-          : [...userFollowed.filter((id) => id !== charityId), charityId];
-
-        return {
-          ...prevUser,
-          followedCharities: nextUserFollowed
-        };
-      });
-
-      return updatedFollowed;
+    // Update local state immediately
+    setFollowedCharities(updatedFollowed);
+    setUser((prevUser) => {
+      if (!prevUser) return prevUser;
+      return {
+        ...prevUser,
+        followedCharities: updatedFollowed
+      };
     });
+
+    // Save to database if user is connected
+    if (isConnected && user && user.id) {
+      try {
+        // Convert UUID strings to UUID format for database
+        const charityUuids = updatedFollowed.map(id => {
+          // If ID is already a UUID string, use it; otherwise try to convert
+          return typeof id === 'string' ? id : String(id);
+        });
+
+        const { error } = await supabase
+          .from('users')
+          .update({ followed_charities: charityUuids })
+          .eq('email', user.email);
+
+        if (error) {
+          console.error('Failed to update followed charities in database:', error);
+          // Rollback local state on error
+          setFollowedCharities(currentFollowed);
+        } else {
+          console.log('✅ Followed charities updated in database');
+        }
+      } catch (err) {
+        console.error('Error updating followed charities:', err);
+        // Rollback local state on error
+        setFollowedCharities(currentFollowed);
+      }
+    }
   };
 
   const makeDonation = (charityId, amount, message) => {

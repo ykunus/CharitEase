@@ -270,7 +270,7 @@ const FeedScreen = ({ navigation }) => {
             <Ionicons
               name={tab.icon}
               size={18}
-              color={isActive ? '#FFFFFF' : '#3B82F6'}
+              color={isActive ? '#FFFFFF' : '#22C55E'}
               style={styles.tabIcon}
             />
             <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
@@ -335,7 +335,7 @@ const FeedScreen = ({ navigation }) => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#3B82F6"
+            tintColor="#22C55E"
           />
         }
         ListHeaderComponent={renderHeader}
@@ -390,18 +390,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#3B82F6',
+    borderColor: '#22C55E',
     borderRadius: 999,
     backgroundColor: '#FFFFFF',
     marginHorizontal: 4,
   },
   tabButtonActive: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#22C55E',
+    shadowColor: '#22C55E',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   tabLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: '#22C55E',
   },
   tabLabelActive: {
     color: '#FFFFFF',
@@ -449,15 +457,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#2563EB',
+    backgroundColor: '#22C55E',
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 18,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
   },
   mapButtonContent: {
     flexDirection: 'row',
