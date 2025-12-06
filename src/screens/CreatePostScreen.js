@@ -9,20 +9,69 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Image
+  Image,
+  Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 
 const CreatePostScreen = ({ navigation }) => {
-  const { user } = useAuth();
+  const { user, createPost } = useAuth();
   const [postContent, setPostContent] = useState('');
   const [postTitle, setPostTitle] = useState('');
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [posting, setPosting] = useState(false);
 
-  const handlePost = () => {
-    // TODO: Save post to database
-    console.log('Posting:', { title: postTitle, content: postContent });
-    navigation.goBack();
+  const pickImage = async () => {
+    try {
+      // Request permission
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'We need access to your photos to add images to posts.');
+        return;
+      }
+
+      // Launch image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setSelectedImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  };
+
+  const removeImage = () => {
+    setSelectedImage(null);
+  };
+
+  const handlePost = async () => {
+    if (!postContent.trim() || posting) return;
+
+    setPosting(true);
+    try {
+      await createPost(postTitle, postContent, selectedImage, 'update');
+      
+      // Reset form
+      setPostContent('');
+      setPostTitle('');
+      setSelectedImage(null);
+      
+      // Navigate back (posts will auto-refresh via context)
+      navigation.goBack();
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Failed to create post. Please try again.');
+      setPosting(false);
+    }
   };
 
   const characterCount = postContent.length;
@@ -42,17 +91,17 @@ const CreatePostScreen = ({ navigation }) => {
           <Text style={styles.headerTitle}>Create post</Text>
           <TouchableOpacity 
             onPress={handlePost}
-            disabled={!postContent.trim()}
+            disabled={!postContent.trim() || posting}
             style={[
               styles.postButton,
-              !postContent.trim() && styles.postButtonDisabled
+              (!postContent.trim() || posting) && styles.postButtonDisabled
             ]}
           >
             <Text style={[
               styles.postButtonText,
-              !postContent.trim() && styles.postButtonTextDisabled
+              (!postContent.trim() || posting) && styles.postButtonTextDisabled
             ]}>
-              Post
+              {posting ? 'Posting...' : 'Post'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -66,7 +115,9 @@ const CreatePostScreen = ({ navigation }) => {
             />
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{user?.name || 'Your Name'}</Text>
-              <Text style={styles.userType}>Charity</Text>
+              <Text style={styles.userType}>
+                {user?.userType === 'charity' ? 'Charity' : 'User'}
+              </Text>
             </View>
           </View>
 
@@ -93,6 +144,19 @@ const CreatePostScreen = ({ navigation }) => {
             maxLength={maxCharacters}
           />
 
+          {/* Selected Image Preview */}
+          {selectedImage && (
+            <View style={styles.imagePreviewContainer}>
+              <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+              <TouchableOpacity 
+                style={styles.removeImageButton}
+                onPress={removeImage}
+              >
+                <Ionicons name="close-circle" size={28} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Character Count */}
           <Text style={styles.characterCount}>
             {characterCount}/{maxCharacters}
@@ -100,13 +164,12 @@ const CreatePostScreen = ({ navigation }) => {
 
           {/* Action Buttons */}
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={pickImage}
+            >
               <Ionicons name="image-outline" size={24} color="#22C55E" />
-              <Text style={styles.actionText}>Photo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
-              <Ionicons name="videocam-outline" size={24} color="#22C55E" />
-              <Text style={styles.actionText}>Video</Text>
+              <Text style={styles.actionText}>Add Photo</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -224,6 +287,25 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     color: '#22C55E',
+  },
+  imagePreviewContainer: {
+    position: 'relative',
+    marginHorizontal: 16,
+    marginVertical: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  imagePreview: {
+    width: '100%',
+    height: 300,
+    borderRadius: 12,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 14,
   },
 });
 

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,27 +16,43 @@ import { formatCurrency, formatNumber, formatDate } from '../utils/formatters';
 import { supabase } from '../config/supabase';
 import ConfirmationModal from '../components/ConfirmationModal';
 import EmptyState from '../components/EmptyState';
+import PostCard from '../components/PostCard';
 
 const ProfileScreen = ({ navigation }) => {
-  const { user, donations, posts, getCharityById, getFollowedCharitiesData, likePost } = useAuth();
+  const { user, donations, posts, charitiesData, getCharityById, getFollowedCharitiesData, likePost } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('posts'); // 'posts' or 'donations' or 'following'
+  const [charityDbId, setCharityDbId] = useState(null);
 
   const isCharity = user?.userType === 'charity';
   const followedCharities = getFollowedCharitiesData();
 
+  // Get charity database ID for matching posts
+  useEffect(() => {
+    if (isCharity && user?.email && charitiesData?.length > 0) {
+      // Find charity by email match
+      const charity = charitiesData.find(c => c.email === user.email);
+      if (charity) {
+        setCharityDbId(charity.id);
+      }
+    }
+  }, [isCharity, user?.email, charitiesData]);
+
   // Get user's or charity's posts
   const userPosts = useMemo(() => {
-    if (!posts) return [];
+    if (!posts || !user) return [];
     return posts.filter(post => {
       if (isCharity) {
-        return post.charityId === user.id;
+        // Charity posts: match charity database ID (not auth user.id)
+        return post.charityId === charityDbId;
+      } else {
+        // User posts: charityId is null for user posts, check userId if available
+        return post.charityId === null && (post.userId === user.id || post.userId === undefined);
       }
-      return false; // Regular users don't create posts currently
     }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  }, [posts, user, isCharity]);
+  }, [posts, user, isCharity, charityDbId]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -44,6 +60,20 @@ const ProfileScreen = ({ navigation }) => {
       setRefreshing(false);
     }, 1500);
   }, []);
+
+  const handleLike = (postId) => {
+    likePost(postId);
+  };
+
+  const handleComment = (post) => {
+    // Navigate to comments or show comment modal
+    console.log('Comment on post:', post.id);
+  };
+
+  const handleShare = (post) => {
+    // Handle sharing functionality
+    console.log('Share post:', post.id);
+  };
 
   const handleCharityPress = (charity) => {
     navigation.navigate('Charities', {
@@ -335,13 +365,23 @@ const ProfileScreen = ({ navigation }) => {
   );
 
   const renderPost = ({ item: post }) => {
-    const charity = getCharityById(post.charityId);
-    if (!charity) return null;
+    // For charity posts, get charity info
+    const charity = post.charityId ? getCharityById(post.charityId) : null;
+    
+    // For user posts (no charity), create a mock charity object from user
+    const postAuthor = charity || (post.charityId === null ? {
+      id: user.id,
+      name: user.name,
+      logo: user.avatar,
+      verified: false
+    } : null);
+
+    if (!postAuthor) return null;
 
     return (
       <PostCard
         post={post}
-        charity={charity}
+        charity={postAuthor}
         onLike={handleLike}
         onComment={() => handleComment(post)}
         onShare={() => handleShare(post)}
@@ -361,12 +401,12 @@ const ProfileScreen = ({ navigation }) => {
           />
         );
       }
-      if (!isCharity) {
+      if (!isCharity && userPosts.length === 0) {
         return (
           <EmptyState
             icon="grid-outline"
-            title="No posts"
-            message="Users don't create posts. Check out the Feed to see updates from charities you follow!"
+            title="No posts yet"
+            message="Share your thoughts and experiences with the community!"
           />
         );
       }

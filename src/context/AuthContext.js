@@ -28,6 +28,7 @@ export const AuthProvider = ({ children }) => {
     checkAuthState();
     testSupabaseConnection();
     loadCharitiesFromDatabase();
+    loadPostsFromDatabase();
   }, []);
 
   const checkAuthState = async () => {
@@ -281,6 +282,46 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const loadPostsFromDatabase = async () => {
+    try {
+      console.log('🔄 Loading posts from database...');
+      const { data: postsFromDB, error } = await supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      
+      if (error) {
+        console.log('⚠️ Failed to load posts:', error.message);
+        return;
+      }
+      
+      if (postsFromDB && postsFromDB.length > 0) {
+        // Transform database format to app format
+        const formattedPosts = postsFromDB.map(post => ({
+          id: post.id,
+          charityId: post.charity_id,
+          userId: post.user_id || null, // Track user_id if available in database
+          type: post.type,
+          title: post.title,
+          content: post.content,
+          image: post.image_url,
+          likes: post.likes_count || 0,
+          comments: post.comments_count || 0,
+          shares: post.shares_count || 0,
+          timestamp: post.created_at
+        }));
+        
+        setPosts(formattedPosts);
+        console.log(`✅ Loaded ${formattedPosts.length} posts from database`);
+      } else {
+        console.log('ℹ️ No posts found in database');
+      }
+    } catch (err) {
+      console.log('⚠️ Error loading posts:', err.message);
+    }
+  };
+
   const signUp = async ({ email, password, name, country, userType, ...additionalData }) => {
     try {
       console.log('🔄 Creating account with Supabase...');
@@ -524,6 +565,84 @@ export const AuthProvider = ({ children }) => {
     }));
   };
 
+  const createPost = async (title, content, imageUrl, type = 'update') => {
+    try {
+      if (!user) {
+        throw new Error('You must be logged in to create a post');
+      }
+
+      if (!content || !content.trim()) {
+        throw new Error('Post content is required');
+      }
+
+      console.log('🔄 Creating post in database...');
+
+      let charityId = null;
+
+      // If user is a charity, get their charity ID
+      if (user.userType === 'charity') {
+        const { data: charityProfile, error: charityError } = await supabase
+          .from('charities')
+          .select('id')
+          .eq('email', user.email)
+          .single();
+
+        if (charityError || !charityProfile) {
+          throw new Error('Charity profile not found');
+        }
+
+        charityId = charityProfile.id;
+      }
+      // For regular users, charity_id will be NULL (they post as themselves)
+
+      // Create post in database
+      const { data: newPost, error: postError } = await supabase
+        .from('posts')
+        .insert([{
+          charity_id: charityId,
+          type: type,
+          title: title || null,
+          content: content,
+          image_url: imageUrl || null,
+          likes_count: 0,
+          comments_count: 0,
+          shares_count: 0
+        }])
+        .select()
+        .single();
+
+      if (postError) {
+        console.error('Post creation error:', postError);
+        throw new Error('Failed to create post: ' + postError.message);
+      }
+
+      console.log('✅ Post created in database');
+
+      // Format post for app
+      const formattedPost = {
+        id: newPost.id,
+        charityId: newPost.charity_id, // NULL for user posts
+        userId: user.userType === 'user' ? user.id : null, // Track user ID for user posts
+        type: newPost.type,
+        title: newPost.title,
+        content: newPost.content,
+        image: newPost.image_url,
+        likes: newPost.likes_count,
+        comments: newPost.comments_count,
+        shares: newPost.shares_count,
+        timestamp: newPost.created_at
+      };
+
+      // Add to local posts state (prepend to show at top) - no need to reload
+      setPosts(prev => [formattedPost, ...prev]);
+
+      return formattedPost;
+    } catch (error) {
+      console.error('Create post error:', error);
+      throw error;
+    }
+  };
+
   const likePost = (postId) => {
     setPosts(prev => prev.map(post => 
       post.id === postId 
@@ -559,6 +678,8 @@ export const AuthProvider = ({ children }) => {
     followCharity,
     makeDonation,
     likePost,
+    createPost,
+    loadPostsFromDatabase,
     getCharityById,
     getFollowedCharitiesData,
     getFollowedCharitiesPosts,
