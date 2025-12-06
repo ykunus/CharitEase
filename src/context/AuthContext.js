@@ -22,6 +22,8 @@ export const AuthProvider = ({ children }) => {
   const [donations, setDonations] = useState(donationHistory);
   const [followedCharities, setFollowedCharities] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [likedPosts, setLikedPosts] = useState([]); // Track posts user has liked
+  const [comments, setComments] = useState({}); // Track comments by post ID
 
   // Check for existing session on app start
   useEffect(() => {
@@ -45,21 +47,21 @@ export const AuthProvider = ({ children }) => {
       } else {
         // Fallback to AsyncStorage for demo user
         console.log('⚠️ No Supabase session, checking local storage...');
-        const demoUser = await AsyncStorage.getItem('demoUser');
-        if (demoUser) {
-          const parsed = JSON.parse(demoUser);
-          const fallbackFollowed = Array.isArray(parsed.followedCharities) ? parsed.followedCharities : [];
+      const demoUser = await AsyncStorage.getItem('demoUser');
+      if (demoUser) {
+        const parsed = JSON.parse(demoUser);
+        const fallbackFollowed = Array.isArray(parsed.followedCharities) ? parsed.followedCharities : [];
 
-          setUser({
-            ...parsed,
-            followedCharities: fallbackFollowed
-          });
-          setFollowedCharities(fallbackFollowed);
-          setIsAuthenticated(true);
+        setUser({
+          ...parsed,
+          followedCharities: fallbackFollowed
+        });
+        setFollowedCharities(fallbackFollowed);
+        setIsAuthenticated(true);
           setIsConnected(false);
-          
-          console.log('✅ Demo user loaded from storage');
-        } else {
+        
+        console.log('✅ Demo user loaded from storage');
+      } else {
           console.log('ℹ️ No user found');
         }
       }
@@ -93,6 +95,41 @@ export const AuthProvider = ({ children }) => {
           .single();
 
         if (charityProfile) {
+          // Ensure charity has a corresponding entry in users table for likes/comments
+          // Check if user entry exists
+          let userDbId = null;
+          const { data: existingUser } = await supabase
+            .from('users')
+            .select('id')
+            .eq('email', supabaseUser.email)
+            .single();
+          
+          if (existingUser) {
+            userDbId = existingUser.id;
+          } else {
+            // Create user entry for charity to enable likes/comments
+            const { data: newUser, error: userError } = await supabase
+              .from('users')
+              .insert([{
+                email: supabaseUser.email,
+                name: charityProfile.name,
+                country: charityProfile.country,
+                user_type: 'charity',
+                avatar_url: charityProfile.logo_url,
+                total_donated: 0,
+                total_donations: 0,
+                followed_charities: [],
+                posts: []
+              }])
+              .select('id')
+              .single();
+            
+            if (!userError && newUser) {
+              userDbId = newUser.id;
+              console.log('✅ Created user entry for charity');
+            }
+          }
+
           // Load charity's posts if they have any
           let charityPosts = [];
           if (charityProfile.posts && Array.isArray(charityProfile.posts) && charityProfile.posts.length > 0) {
@@ -120,7 +157,8 @@ export const AuthProvider = ({ children }) => {
           }
           
           setUser({
-            id: supabaseUser.id,
+            id: userDbId || supabaseUser.id, // Use users table ID for likes/comments, fallback to auth ID
+            dbId: userDbId, // Store the users table ID separately
             email: supabaseUser.email,
             name: charityProfile.name,
             country: charityProfile.country,
@@ -144,6 +182,21 @@ export const AuthProvider = ({ children }) => {
           });
           setIsAuthenticated(true);
           setIsConnected(true);
+          
+          // Load charity's liked posts using the users table ID
+          if (userDbId) {
+            const { data: charityLikes, error: likesError } = await supabase
+              .from('likes')
+              .select('post_id')
+              .eq('user_id', userDbId);
+            
+            if (!likesError && charityLikes) {
+              const likedPostIds = charityLikes.map(like => like.post_id);
+              setLikedPosts(likedPostIds);
+              console.log(`✅ Loaded ${likedPostIds.length} liked posts`);
+            }
+          }
+          
           console.log(`✅ Loaded ${charityPosts.length} posts for charity`);
         }
       } else {
@@ -186,7 +239,7 @@ export const AuthProvider = ({ children }) => {
           }
           
           setUser({
-            id: supabaseUser.id,
+            id: profile.id, // Use users table ID for likes/comments
             email: supabaseUser.email,
             name: profile.name,
             country: profile.country,
@@ -204,6 +257,18 @@ export const AuthProvider = ({ children }) => {
           setFollowedCharities(followedList);
           setIsAuthenticated(true);
           setIsConnected(true);
+          
+          // Load user's liked posts using the users table ID
+          const { data: userLikes, error: likesError } = await supabase
+            .from('likes')
+            .select('post_id')
+            .eq('user_id', profile.id);
+          
+          if (!likesError && userLikes) {
+            const likedPostIds = userLikes.map(like => like.post_id);
+            setLikedPosts(likedPostIds);
+            console.log(`✅ Loaded ${likedPostIds.length} liked posts`);
+          }
           
           console.log(`✅ Loaded ${followedList.length} followed charities and ${userPosts.length} posts from database`);
         } else {
@@ -273,8 +338,8 @@ export const AuthProvider = ({ children }) => {
       
       if (error) {
         console.log('⚠️ Supabase connection failed:', error.message);
-        setIsConnected(false);
-        return false;
+      setIsConnected(false);
+      return false;
       }
       
       console.log('✅ Supabase connected successfully!');
@@ -382,17 +447,48 @@ export const AuthProvider = ({ children }) => {
       }
       
       if (postsFromDB && postsFromDB.length > 0) {
+        // Get actual likes and comments counts from database
+        const postIds = postsFromDB.map(p => p.id);
+        
+        // Get likes count per post
+        const { data: likesData } = await supabase
+          .from('likes')
+          .select('post_id')
+          .in('post_id', postIds);
+        
+        // Get comments count per post
+        const { data: commentsData } = await supabase
+          .from('comments')
+          .select('post_id')
+          .in('post_id', postIds);
+        
+        // Count likes and comments per post
+        const likesCount = {};
+        const commentsCount = {};
+        
+        if (likesData) {
+          likesData.forEach(like => {
+            likesCount[like.post_id] = (likesCount[like.post_id] || 0) + 1;
+          });
+        }
+        
+        if (commentsData) {
+          commentsData.forEach(comment => {
+            commentsCount[comment.post_id] = (commentsCount[comment.post_id] || 0) + 1;
+          });
+        }
+        
         // Transform database format to app format
         const formattedPosts = postsFromDB.map(post => ({
           id: post.id,
           charityId: post.charity_id,
-          userId: post.user_id || null, // Track user_id if available in database
+          userId: null, // Posts table doesn't have user_id, tracked via user.posts array
           type: post.type,
           title: post.title,
           content: post.content,
           image: post.image_url,
-          likes: post.likes_count || 0,
-          comments: post.comments_count || 0,
+          likes: likesCount[post.id] || 0, // Use actual count from likes table
+          comments: commentsCount[post.id] || 0, // Use actual count from comments table
           shares: post.shares_count || 0,
           timestamp: post.created_at
         }));
@@ -417,9 +513,9 @@ export const AuthProvider = ({ children }) => {
         password,
         options: {
           data: {
-            name: userType === 'charity' ? (additionalData.charityName || name) : name,
-            country,
-            userType,
+        name: userType === 'charity' ? (additionalData.charityName || name) : name,
+        country,
+        userType,
             ...additionalData
           }
         }
@@ -470,6 +566,29 @@ export const AuthProvider = ({ children }) => {
         }
 
         console.log('✅ Charity profile created in database');
+
+        // Also create a user entry for likes/comments
+        const charityUserEntry = {
+          email: email,
+          name: additionalData.charityName || name,
+          country: country,
+          user_type: 'charity',
+          avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face',
+          total_donated: 0,
+          total_donations: 0,
+          followed_charities: [],
+          posts: []
+        };
+
+        const { error: userEntryError } = await supabase
+          .from('users')
+          .insert([charityUserEntry]);
+
+        if (userEntryError) {
+          console.log('⚠️ Could not create user entry for charity (may already exist):', userEntryError.message);
+        } else {
+          console.log('✅ Created user entry for charity (enables likes/comments)');
+        }
 
         // Add to local charities list
         const newCharity = {
@@ -591,20 +710,20 @@ export const AuthProvider = ({ children }) => {
 
   const followCharity = async (charityId) => {
     const currentFollowed = Array.isArray(followedCharities) ? followedCharities : [];
-    const isFollowing = currentFollowed.includes(charityId);
-    const updatedFollowed = isFollowing
-      ? currentFollowed.filter((id) => id !== charityId)
-      : [...currentFollowed, charityId];
+      const isFollowing = currentFollowed.includes(charityId);
+      const updatedFollowed = isFollowing
+        ? currentFollowed.filter((id) => id !== charityId)
+        : [...currentFollowed, charityId];
 
     // Update local state immediately
     setFollowedCharities(updatedFollowed);
-    setUser((prevUser) => {
-      if (!prevUser) return prevUser;
-      return {
-        ...prevUser,
+      setUser((prevUser) => {
+        if (!prevUser) return prevUser;
+        return {
+          ...prevUser,
         followedCharities: updatedFollowed
-      };
-    });
+        };
+      });
 
     // Save to database if user is connected
     if (isConnected && user && user.id) {
@@ -683,18 +802,21 @@ export const AuthProvider = ({ children }) => {
       // For regular users, charity_id will be NULL (they post as themselves)
 
       // Create post in database
+      // Note: user_id column doesn't exist in posts table, user posts have charity_id = null
+      const postData = {
+        charity_id: charityId, // NULL for user posts
+        type: type,
+        title: title || null,
+        content: content,
+        image_url: imageUrl || null,
+        likes_count: 0,
+        comments_count: 0,
+        shares_count: 0
+      };
+      
       const { data: newPost, error: postError } = await supabase
         .from('posts')
-        .insert([{
-          charity_id: charityId,
-          type: type,
-          title: title || null,
-          content: content,
-          image_url: imageUrl || null,
-          likes_count: 0,
-          comments_count: 0,
-          shares_count: 0
-        }])
+        .insert([postData])
         .select()
         .single();
 
@@ -779,12 +901,175 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const likePost = (postId) => {
+  const likePost = async (postId) => {
+    if (!user || !user.id) {
+      console.log('⚠️ User not logged in, cannot like post');
+      return;
+    }
+
+    // Check if user already liked this post
+    const isLiked = likedPosts.includes(postId);
+    
+    try {
+      if (isLiked) {
+        // Unlike: Remove from database
+        const { error } = await supabase
+          .from('likes')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('post_id', postId);
+
+        if (error) throw error;
+
+        // Update local state
+        setLikedPosts(prev => prev.filter(id => id !== postId));
+        setPosts(prev => prev.map(post => 
+          post.id === postId 
+            ? { ...post, likes: Math.max(0, (post.likes || 0) - 1) }
+            : post
+        ));
+        
+        console.log('✅ Post unliked');
+      } else {
+        // Like: Add to database
+        const { error } = await supabase
+          .from('likes')
+          .insert([{
+            user_id: user.id,
+            post_id: postId
+          }]);
+
+        if (error) throw error;
+
+        // Update local state
+        setLikedPosts(prev => [...prev, postId]);
+        setPosts(prev => prev.map(post => 
+          post.id === postId 
+            ? { ...post, likes: (post.likes || 0) + 1 }
+            : post
+        ));
+        
+        console.log('✅ Post liked');
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error);
+      // Revert local state on error
+      // State will be corrected on next refresh
+    }
+  };
+
+  const addComment = async (postId, content) => {
+    if (!user || !user.id) {
+      throw new Error('You must be logged in to comment');
+    }
+
+    if (!content || !content.trim()) {
+      throw new Error('Comment content is required');
+    }
+
+    try {
+      // Add comment to database
+      const { data: newComment, error } = await supabase
+        .from('comments')
+        .insert([{
+          user_id: user.id,
+          post_id: postId,
+          content: content.trim()
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Format comment for app
+      const formattedComment = {
+        id: newComment.id,
+        userId: newComment.user_id,
+        postId: newComment.post_id,
+        content: newComment.content,
+        timestamp: newComment.created_at,
+        userName: user.name,
+        userAvatar: user.avatar
+      };
+
+      // Update comments state
+      setComments(prev => ({
+        ...prev,
+        [postId]: [...(prev[postId] || []), formattedComment]
+      }));
+
+      // Update post comments count
     setPosts(prev => prev.map(post => 
       post.id === postId 
-        ? { ...post, likes: post.likes + 1 }
+          ? { ...post, comments: (post.comments || 0) + 1 }
         : post
     ));
+
+      console.log('✅ Comment added');
+      return formattedComment;
+    } catch (error) {
+      console.error('Error adding comment:', error);
+      throw error;
+    }
+  };
+
+  const loadCommentsForPost = async (postId) => {
+    try {
+      const { data: commentsData, error } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (commentsData && commentsData.length > 0) {
+        // Get user info for each comment
+        const userIds = [...new Set(commentsData.map(c => c.user_id))];
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('id, name, avatar_url')
+          .in('id', userIds);
+        
+        const userMap = {};
+        if (usersData) {
+          usersData.forEach(u => {
+            userMap[u.id] = u;
+          });
+        }
+
+        const formattedComments = commentsData.map(comment => {
+          const commentUser = userMap[comment.user_id];
+          return {
+            id: comment.id,
+            userId: comment.user_id,
+            postId: comment.post_id,
+            content: comment.content,
+            timestamp: comment.created_at,
+            userName: commentUser?.name || 'Unknown',
+            userAvatar: commentUser?.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face'
+          };
+        });
+
+        setComments(prev => ({
+          ...prev,
+          [postId]: formattedComments
+        }));
+
+        return formattedComments;
+      }
+      
+      // Set empty array if no comments
+      setComments(prev => ({
+        ...prev,
+        [postId]: []
+      }));
+      
+      return [];
+    } catch (error) {
+      console.error('Error loading comments:', error);
+      return [];
+    }
   };
 
   const getCharityById = (charityId) => {
@@ -808,6 +1093,8 @@ export const AuthProvider = ({ children }) => {
     donations,
     followedCharities,
     isConnected,
+    likedPosts,
+    comments,
     signUp,
     signIn,
     signOut,
@@ -815,6 +1102,8 @@ export const AuthProvider = ({ children }) => {
     makeDonation,
     likePost,
     createPost,
+    addComment,
+    loadCommentsForPost,
     loadPostsFromDatabase,
     getCharityById,
     getFollowedCharitiesData,

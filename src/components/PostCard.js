@@ -12,7 +12,7 @@ import { formatDate, getPostTypeIcon, getPostTypeColor } from '../utils/formatte
 
 const { width } = Dimensions.get('window');
 
-const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress }) => {
+const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress, isLiked = false }) => {
   const handleLike = () => {
     if (onLike) {
       onLike(post.id);
@@ -60,8 +60,14 @@ const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress })
       {/* Engagement */}
       <View style={styles.engagement}>
         <TouchableOpacity style={styles.engagementButton} onPress={handleLike}>
-          <Ionicons name="heart-outline" size={20} color="#6B7280" />
-          <Text style={styles.engagementText}>{post.likes || 0}</Text>
+          <Ionicons 
+            name={isLiked ? "heart" : "heart-outline"} 
+            size={20} 
+            color={isLiked ? "#EF4444" : "#6B7280"} 
+          />
+          <Text style={[styles.engagementText, isLiked && styles.engagementTextLiked]}>
+            {post.likes || 0}
+          </Text>
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.engagementButton} onPress={onComment}>
@@ -183,6 +189,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
     fontWeight: '500',
+  },
+  engagementTextLiked: {
+    color: '#EF4444',
   },
 });
 

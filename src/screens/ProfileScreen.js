@@ -17,14 +17,16 @@ import { supabase } from '../config/supabase';
 import ConfirmationModal from '../components/ConfirmationModal';
 import EmptyState from '../components/EmptyState';
 import PostCard from '../components/PostCard';
+import CommentModal from '../components/CommentModal';
 
 const ProfileScreen = ({ navigation }) => {
-  const { user, donations, posts, charitiesData, getCharityById, getFollowedCharitiesData, likePost } = useAuth();
+  const { user, donations, posts, charitiesData, getCharityById, getFollowedCharitiesData, likePost, likedPosts } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('posts'); // 'posts' or 'donations' or 'following'
   const [charityDbId, setCharityDbId] = useState(null);
+  const [commentModalPost, setCommentModalPost] = useState(null);
 
   const isCharity = user?.userType === 'charity';
   const followedCharities = getFollowedCharitiesData();
@@ -85,8 +87,7 @@ const ProfileScreen = ({ navigation }) => {
   };
 
   const handleComment = (post) => {
-    // Navigate to comments or show comment modal
-    console.log('Comment on post:', post.id);
+    setCommentModalPost(post);
   };
 
   const handleShare = (post) => {
@@ -401,6 +402,7 @@ const ProfileScreen = ({ navigation }) => {
       <PostCard
         post={post}
         charity={postAuthor}
+        isLiked={likedPosts?.includes(post.id)}
         onLike={handleLike}
         onComment={() => handleComment(post)}
         onShare={() => handleShare(post)}
@@ -514,6 +516,13 @@ const ProfileScreen = ({ navigation }) => {
         confirmStyle="destructive"
         onConfirm={confirmSignOut}
         onCancel={cancelSignOut}
+      />
+      
+      {/* Comment Modal */}
+      <CommentModal
+        visible={commentModalPost !== null}
+        post={commentModalPost}
+        onClose={() => setCommentModalPost(null)}
       />
     </SafeAreaView>
   );

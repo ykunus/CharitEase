@@ -14,6 +14,7 @@ import { userProfile } from '../data/demoData';
 import PostCard from '../components/PostCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
+import CommentModal from '../components/CommentModal';
 import { calculateDistanceKm, kmToMiles } from '../utils/geo';
 
 const TAB_CONFIG = [
@@ -34,12 +35,14 @@ const FeedScreen = ({ navigation }) => {
     followedCharities,
     getCharityById,
     likePost,
-    user
+    user,
+    likedPosts
   } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedTab, setSelectedTab] = useState('following');
   const [distance, setDistance] = useState(DEFAULT_DISTANCE_MILES);
+  const [commentModalPost, setCommentModalPost] = useState(null);
 
   const userLocation = user?.location || userProfile.location;
 
@@ -56,8 +59,7 @@ const FeedScreen = ({ navigation }) => {
   };
 
   const handleComment = (post) => {
-    // Navigate to comments or show comment modal
-    console.log('Comment on post:', post.id);
+    setCommentModalPost(post);
   };
 
   const handleShare = (post) => {
@@ -209,6 +211,7 @@ const FeedScreen = ({ navigation }) => {
         <PostCard
           post={post}
           charity={postAuthor}
+          isLiked={likedPosts?.includes(post.id)}
           onLike={handleLike}
           onComment={() => handleComment(post)}
           onShare={() => handleShare(post)}
@@ -376,6 +379,13 @@ const FeedScreen = ({ navigation }) => {
         ListEmptyComponent={renderEmpty}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={contentContainerStyle}
+      />
+      
+      {/* Comment Modal */}
+      <CommentModal
+        visible={commentModalPost !== null}
+        post={commentModalPost}
+        onClose={() => setCommentModalPost(null)}
       />
     </SafeAreaView>
   );
