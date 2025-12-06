@@ -15,6 +15,7 @@ import WelcomeScreen from '../screens/WelcomeScreen';
 import SignInScreen from '../screens/SignInScreen';
 import LocalCharityMapScreen from '../screens/LocalCharityMapScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import CreatePostScreen from '../screens/CreatePostScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -113,6 +114,8 @@ const MainTabs = () => {
             iconName = focused ? 'home' : 'home-outline';
           } else if (route.name === 'Charities') {
             iconName = focused ? 'heart' : 'heart-outline';
+          } else if (route.name === 'CreatePost') {
+            iconName = focused ? 'add-circle' : 'add-circle-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
@@ -149,6 +152,13 @@ const MainTabs = () => {
         component={CharitiesStack}
         options={{
           tabBarLabel: 'Charities',
+        }}
+      />
+      <Tab.Screen 
+        name="CreatePost" 
+        component={CreatePostScreen}
+        options={{
+          tabBarLabel: 'Create',
         }}
       />
       <Tab.Screen 
