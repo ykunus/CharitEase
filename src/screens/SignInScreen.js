@@ -12,9 +12,12 @@ import {
   ScrollView,
   Pressable,
   Modal,
-  FlatList
+  FlatList,
+  Image
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { useAuth } from '../context/AuthContext';
 import { charityCategories } from '../data/demoData';
 
@@ -26,6 +29,9 @@ const SignInScreen = ({ navigation, route }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [profileImage, setProfileImage] = useState(null);
+  const [locationData, setLocationData] = useState(null);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -102,7 +108,8 @@ const SignInScreen = ({ navigation, route }) => {
           name: isCharity ? formData.charityName : formData.name,
           country: formData.country,
           userType,
-          bio: formData.bio
+          bio: formData.bio,
+          avatarUrl: profileImage || null
         };
 
         if (isCharity) {
@@ -113,6 +120,11 @@ const SignInScreen = ({ navigation, route }) => {
           signUpData.address = formData.address;
           signUpData.foundedYear = formData.foundedYear;
           signUpData.category = formData.category;
+          
+          // Add location data if available
+          if (locationData) {
+            signUpData.location = locationData;
+          }
         }
 
         await signUp(signUpData);
@@ -146,6 +158,95 @@ const SignInScreen = ({ navigation, route }) => {
       foundedYear: new Date().getFullYear(),
       category: 'Education'
     });
+    setProfileImage(null);
+    setLocationData(null);
+  };
+
+  const pickProfileImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'We need access to your photos to set a profile picture.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setProfileImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  };
+
+  const removeProfileImage = () => {
+    setProfileImage(null);
+  };
+
+  const pickLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission needed',
+          'We need access to your location to set your charity\'s location. You can also enter it manually.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Enter Manually', onPress: () => setShowLocationPicker(true) }
+          ]
+        );
+        return;
+      }
+
+      // Get current location
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      // Reverse geocode to get address
+      const geocode = await Location.reverseGeocodeAsync({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+
+      if (geocode.length > 0) {
+        const address = geocode[0];
+        const locationString = `${address.city || ''}${address.region ? ', ' + address.region : ''}${address.country ? ', ' + address.country : ''}`.trim();
+        
+        setLocationData({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+          address: locationString,
+          city: address.city,
+          region: address.region,
+          country: address.country,
+        });
+        
+        setFormData(prev => ({
+          ...prev,
+          country: address.country || prev.country,
+          address: locationString || prev.address
+        }));
+      } else {
+        // If reverse geocoding fails, just use coordinates
+        setLocationData({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        });
+      }
+    } catch (error) {
+      console.error('Error getting location:', error);
+      Alert.alert('Error', 'Failed to get location. You can enter it manually.');
+    }
   };
 
   const toggleMode = () => {
@@ -208,6 +309,34 @@ const SignInScreen = ({ navigation, route }) => {
             <View style={styles.form}>
               {isSignUp && (
                 <>
+                  {/* Profile Picture Section */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Profile Picture</Text>
+                    <View style={styles.profilePictureContainer}>
+                      {profileImage ? (
+                        <View style={styles.profileImageWrapper}>
+                          <Image source={{ uri: profileImage }} style={styles.profileImage} />
+                          <TouchableOpacity 
+                            style={styles.removeImageButton}
+                            onPress={removeProfileImage}
+                          >
+                            <Ionicons name="close-circle" size={24} color="#EF4444" />
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <TouchableOpacity 
+                          style={styles.addPictureButton}
+                          onPress={pickProfileImage}
+                        >
+                          <Ionicons name="camera" size={32} color="#065F46" />
+                          <Text style={styles.addPictureText}>
+                            {isCharity ? 'Add Logo' : 'Add Photo'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+
                   {isCharity ? (
                     <>
                       <View style={styles.inputGroup}>
@@ -235,26 +364,42 @@ const SignInScreen = ({ navigation, route }) => {
                       </View>
 
                       <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Country *</Text>
-                        <Pressable onPress={() => countryInputRef.current?.focus()}>
-                          <TextInput
-                            ref={countryInputRef}
-                            style={styles.input}
-                            value={formData.country}
-                            onChangeText={(value) => handleInputChange('country', value)}
-                            placeholder="e.g., Syria, Lebanon, Afghanistan"
-                            placeholderTextColor="#9CA3AF"
-                            autoCapitalize="words"
-                            autoComplete="off"
-                            textContentType="none"
-                            spellCheck={false}
-                            autoCorrect={false}
-                            importantForAutofill="no"
-                            returnKeyType="next"
-                            blurOnSubmit={false}
-                            onSubmitEditing={() => missionInputRef.current?.focus()}
-                          />
-                        </Pressable>
+                        <Text style={styles.label}>Location *</Text>
+                        <View style={styles.locationContainer}>
+                          <Pressable 
+                            style={styles.locationInput}
+                            onPress={() => countryInputRef.current?.focus()}
+                          >
+                            <TextInput
+                              ref={countryInputRef}
+                              style={styles.input}
+                              value={locationData?.address || formData.country}
+                              onChangeText={(value) => handleInputChange('country', value)}
+                              placeholder="e.g., Damascus, Syria or use location button"
+                              placeholderTextColor="#9CA3AF"
+                              autoCapitalize="words"
+                              autoComplete="off"
+                              textContentType="none"
+                              spellCheck={false}
+                              autoCorrect={false}
+                              importantForAutofill="no"
+                              returnKeyType="next"
+                              blurOnSubmit={false}
+                              onSubmitEditing={() => missionInputRef.current?.focus()}
+                            />
+                          </Pressable>
+                          <TouchableOpacity 
+                            style={styles.locationButton}
+                            onPress={pickLocation}
+                          >
+                            <Ionicons name="location" size={20} color="#FFFFFF" />
+                          </TouchableOpacity>
+                        </View>
+                        {locationData && (
+                          <Text style={styles.locationInfo}>
+                            📍 Location set: {locationData.address || `${locationData.latitude.toFixed(4)}, ${locationData.longitude.toFixed(4)}`}
+                          </Text>
+                        )}
                       </View>
 
                       <View style={styles.inputGroup}>
@@ -826,6 +971,66 @@ const styles = StyleSheet.create({
   categoryItemTextSelected: {
     color: '#047857',
     fontWeight: '700',
+  },
+  profilePictureContainer: {
+    alignItems: 'center',
+    marginVertical: 8,
+  },
+  profileImageWrapper: {
+    position: 'relative',
+  },
+  profileImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 3,
+    borderColor: '#D1FAE5',
+  },
+  addPictureButton: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#ECFDF3',
+    borderWidth: 2,
+    borderColor: '#D1FAE5',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addPictureText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#065F46',
+    fontWeight: '600',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  locationInput: {
+    flex: 1,
+  },
+  locationButton: {
+    backgroundColor: '#10B981',
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  locationInfo: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#047857',
+    fontStyle: 'italic',
   },
 });
 

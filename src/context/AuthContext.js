@@ -657,6 +657,9 @@ export const AuthProvider = ({ children }) => {
       // Create profile based on user type
       if (userType === 'charity') {
         // Create charity profile
+        // Handle logo URL - use provided avatarUrl or default
+        const logoUrl = additionalData.avatarUrl || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face';
+        
         const charityProfile = {
           email: email,
           name: additionalData.charityName || name,
@@ -664,16 +667,16 @@ export const AuthProvider = ({ children }) => {
           country: country,
           founded_year: additionalData.foundedYear || new Date().getFullYear(),
           verified: false,
-          logo_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face',
+          logo_url: logoUrl,
           cover_image_url: 'https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=400&h=200&fit=crop',
           mission: additionalData.mission || '',
           website: additionalData.website || '',
           phone: additionalData.phone || '',
-          address: additionalData.address || '',
+          address: additionalData.address || (additionalData.location?.address || ''),
           total_raised: 0,
           followers: 0,
-          impact: {},
-          posts: [] // Initialize empty posts array
+          impact: {}
+          // posts field removed - not a column in charities table
         };
 
         const { data: charity, error: charityError } = await supabase
@@ -695,7 +698,7 @@ export const AuthProvider = ({ children }) => {
           name: additionalData.charityName || name,
           country: country,
           user_type: 'charity',
-          avatar_url: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face',
+          avatar_url: logoUrl, // Use same logo as charity
           total_donated: 0,
           total_donations: 0,
           followed_charities: []
@@ -713,16 +716,24 @@ export const AuthProvider = ({ children }) => {
         }
 
         // Add to local charities list
+        // Use location data if provided, otherwise default
+        const locationInfo = additionalData.location || {
+          latitude: 0,
+          longitude: 0,
+          city: charity.country,
+          country: charity.country
+        };
+        
         const newCharity = {
           id: charity.id,
           name: charity.name,
           category: charity.category,
           country: charity.country,
           location: {
-            city: charity.country,
-            country: charity.country,
-            latitude: 0,
-            longitude: 0
+            city: locationInfo.city || charity.country,
+            country: locationInfo.country || charity.country,
+            latitude: locationInfo.latitude || 0,
+            longitude: locationInfo.longitude || 0
           },
           founded: charity.founded_year,
           verified: charity.verified,
@@ -741,16 +752,19 @@ export const AuthProvider = ({ children }) => {
         console.log('✅ New charity added to local charities list');
       } else {
         // Create user profile
+        // Handle avatar URL - use provided avatarUrl or default
+        const avatarUrl = additionalData.avatarUrl || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face';
+        
         const userProfile = {
           email: email,
           name: name,
           country: country,
           bio: additionalData.bio || '',
-          avatar_url: null,
+          avatar_url: avatarUrl,
           total_donated: 0,
           total_donations: 0,
-          user_type: 'user',
-          posts: [] // Initialize empty posts array
+          user_type: 'user'
+          // posts field removed - not a column in users table
         };
 
         const { data: profile, error: profileError } = await supabase
