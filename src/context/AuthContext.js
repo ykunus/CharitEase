@@ -21,6 +21,7 @@ export const AuthProvider = ({ children }) => {
   const [posts, setPosts] = useState(socialPosts);
   const [donations, setDonations] = useState(donationHistory);
   const [followedCharities, setFollowedCharities] = useState([]);
+  const [followedUsers, setFollowedUsers] = useState([]); // Track followed users
   const [isConnected, setIsConnected] = useState(false);
   const [likedPosts, setLikedPosts] = useState([]); // Track posts user has liked
   const [comments, setComments] = useState({}); // Track comments by post ID
@@ -101,7 +102,7 @@ export const AuthProvider = ({ children }) => {
           let charityFollowedList = [];
           const { data: existingUser } = await supabase
             .from('users')
-            .select('id, followed_charities')
+            .select('id, followed_charities, followed_users')
             .eq('email', supabaseUser.email)
             .single();
           
@@ -111,8 +112,13 @@ export const AuthProvider = ({ children }) => {
             charityFollowedList = Array.isArray(existingUser.followed_charities) 
               ? existingUser.followed_charities 
               : [];
+            // Load followed users if column exists
+            const userFollowedList = Array.isArray(existingUser.followed_users) 
+              ? existingUser.followed_users 
+              : [];
+            setFollowedUsers(userFollowedList);
             console.log('✅ Found existing user entry for charity');
-            console.log(`✅ Loaded ${charityFollowedList.length} followed charities for charity`);
+            console.log(`✅ Loaded ${charityFollowedList.length} followed charities and ${userFollowedList.length} followed users for charity`);
           } else {
             // Create user entry for charity to enable likes/comments
             // Note: posts column doesn't exist in users table (posts are tracked differently)
@@ -243,6 +249,10 @@ export const AuthProvider = ({ children }) => {
           const followedList = Array.isArray(profile.followed_charities) 
             ? profile.followed_charities 
             : [];
+          const followedUsersList = Array.isArray(profile.followed_users) 
+            ? profile.followed_users 
+            : [];
+          setFollowedUsers(followedUsersList);
           
           // Load user's posts if they have any
           let userPosts = [];
@@ -511,48 +521,85 @@ export const AuthProvider = ({ children }) => {
         }
         
         // For user posts (charity_id is null), find which user created them
-        // by checking which user has the post ID in their posts array
+        // Use user_id column from posts table if available, otherwise query users
         const userPostsMap = {};
         const userPostsIds = postsFromDB.filter(p => !p.charity_id).map(p => p.id);
         
         if (userPostsIds.length > 0) {
-          // Find users who have these posts in their posts array
-          const { data: usersWithPosts } = await supabase
-            .from('users')
-            .select('id, posts, name, avatar_url')
-            .eq('user_type', 'user');
-          
-          if (usersWithPosts) {
-            usersWithPosts.forEach(user => {
-              if (user.posts && Array.isArray(user.posts)) {
-                user.posts.forEach(postId => {
-                  // Handle both UUID and string types for post ID matching
-                  const postIdStr = String(postId);
-                  // Find matching post ID by comparing as strings (handles UUID/string mismatches)
-                  const matchingPostId = userPostsIds.find(pId => {
-                    const pIdStr = String(pId);
-                    return pIdStr === postIdStr || pId === postId;
-                  });
-                  if (matchingPostId) {
-                    userPostsMap[matchingPostId] = {
-                      userId: user.id,
-                      userName: user.name,
-                      userAvatar: user.avatar_url
-                    };
+          // Method 1: If posts table has user_id column, use it directly
+          // Check if any posts have user_id (column might not exist yet)
+          const postsWithUserId = postsFromDB.filter(p => !p.charity_id && p.user_id);
+          if (postsWithUserId.length > 0) {
+            const userIds = [...new Set(postsWithUserId.map(p => p.user_id).filter(Boolean))];
+            if (userIds.length > 0) {
+              const { data: usersData } = await supabase
+                .from('users')
+                .select('id, name, avatar_url')
+                .in('id', userIds);
+              
+              if (usersData) {
+                const userMap = {};
+                usersData.forEach(u => {
+                  userMap[u.id] = { userId: u.id, userName: u.name, userAvatar: u.avatar_url };
+                });
+                
+                postsWithUserId.forEach(post => {
+                  if (post.user_id && userMap[post.user_id]) {
+                    userPostsMap[post.id] = userMap[post.user_id];
                   }
                 });
               }
-            });
+            }
+          }
+          
+          // Method 2: For posts without user_id (column doesn't exist or legacy posts)
+          const postsWithoutUserId = postsFromDB.filter(p => !p.charity_id && !p.user_id);
+          if (postsWithoutUserId.length > 0) {
+            console.log(`⚠️ ${postsWithoutUserId.length} user posts don't have user_id - please run the migration to add user_id column`);
+            // These posts won't show user names until user_id column is added and populated
           }
         }
         
         // Transform database format to app format
+        // First, batch fetch user info for any posts with user_id that we haven't loaded yet
+        const postsNeedingUserInfo = postsFromDB.filter(p => 
+          !p.charity_id && 
+          p.user_id && 
+          !userPostsMap[p.id]
+        );
+        
+        if (postsNeedingUserInfo.length > 0) {
+          const missingUserIds = [...new Set(postsNeedingUserInfo.map(p => p.user_id).filter(Boolean))];
+          if (missingUserIds.length > 0) {
+            const { data: missingUsersData } = await supabase
+              .from('users')
+              .select('id, name, avatar_url')
+              .in('id', missingUserIds);
+            
+            if (missingUsersData) {
+              const missingUserMap = {};
+              missingUsersData.forEach(u => {
+                missingUserMap[u.id] = { userId: u.id, userName: u.name, userAvatar: u.avatar_url };
+              });
+              
+              postsNeedingUserInfo.forEach(post => {
+                if (post.user_id && missingUserMap[post.user_id]) {
+                  userPostsMap[post.id] = missingUserMap[post.user_id];
+                }
+              });
+            }
+          }
+        }
+        
+        // Now transform all posts
         const formattedPosts = postsFromDB.map(post => {
+          // Get user info from map (if we found it via user_id lookup)
           const userPostInfo = userPostsMap[post.id];
+          
           return {
             id: post.id,
             charityId: post.charity_id,
-            userId: userPostInfo?.userId || null, // Track which user created this post
+            userId: userPostInfo?.userId || post.user_id || null, // Use user_id from post directly or from map
             userName: userPostInfo?.userName || null, // Store user name for display
             userAvatar: userPostInfo?.userAvatar || null, // Store user avatar for display
             type: post.type,
@@ -831,6 +878,53 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const followUser = async (userId) => {
+    const currentFollowed = Array.isArray(followedUsers) ? followedUsers : [];
+    const isFollowing = currentFollowed.includes(userId);
+    const updatedFollowed = isFollowing
+      ? currentFollowed.filter((id) => id !== userId)
+      : [...currentFollowed, userId];
+
+    // Update local state immediately
+    setFollowedUsers(updatedFollowed);
+    setUser((prevUser) => {
+      if (!prevUser) return prevUser;
+        return {
+          ...prevUser,
+        followedUsers: updatedFollowed
+        };
+      });
+
+    // Save to database if user is connected
+    // Note: This requires a followed_users column in the users table
+    // For now, we'll store it locally and can add database support later
+    if (isConnected && user && user.id) {
+      try {
+        // Convert UUID strings to UUID format for database
+        const userUuids = updatedFollowed.map(id => {
+          return typeof id === 'string' ? id : String(id);
+        });
+
+        // Try to update followed_users column (if it exists)
+        // If the column doesn't exist, we'll just store it locally
+        const { error } = await supabase
+          .from('users')
+          .update({ followed_users: userUuids })
+          .eq('id', user.id);
+
+        if (error) {
+          // Column might not exist yet - that's okay, we'll store locally
+          console.log('⚠️ followed_users column may not exist, storing locally only');
+        } else {
+          console.log('✅ Followed users updated in database');
+        }
+      } catch (err) {
+        console.log('⚠️ Error updating followed users (storing locally only):', err);
+        // Don't rollback - keep local state even if DB update fails
+      }
+    }
+  };
+
   const makeDonation = (charityId, amount, message) => {
     const newDonation = {
       id: `donation${Date.now()}`,
@@ -879,7 +973,7 @@ export const AuthProvider = ({ children }) => {
       // For regular users, charity_id will be NULL (they post as themselves)
 
       // Create post in database
-      // Note: user_id column doesn't exist in posts table, user posts have charity_id = null
+      // Note: user_id column may not exist yet - we'll try without it first
       const postData = {
         charity_id: charityId, // NULL for user posts
         type: type,
@@ -891,13 +985,37 @@ export const AuthProvider = ({ children }) => {
         shares_count: 0
       };
       
-      const { data: newPost, error: postError } = await supabase
+      // Try to add user_id if user is a regular user (not charity)
+      // If the column doesn't exist, we'll catch the error and retry without it
+      if (user.userType === 'user') {
+        postData.user_id = user.id;
+      }
+      
+      let { data: newPost, error: postError } = await supabase
         .from('posts')
         .insert([postData])
         .select()
         .single();
 
-      if (postError) {
+      // If error is because user_id column doesn't exist (PGRST204), retry without it
+      if (postError && postError.code === 'PGRST204' && postData.user_id) {
+        console.log('⚠️ user_id column doesn\'t exist, creating post without it');
+        // Remove user_id and try again
+        const { user_id, ...postDataWithoutUserId } = postData;
+        const retryResult = await supabase
+          .from('posts')
+          .insert([postDataWithoutUserId])
+          .select()
+          .single();
+        
+        if (retryResult.error) {
+          console.error('Post creation error (retry):', retryResult.error);
+          throw new Error('Failed to create post: ' + retryResult.error.message);
+        }
+        
+        newPost = retryResult.data;
+        postError = null;
+      } else if (postError) {
         console.error('Post creation error:', postError);
         throw new Error('Failed to create post: ' + postError.message);
       }
@@ -923,36 +1041,26 @@ export const AuthProvider = ({ children }) => {
             .eq('id', charityId);
         }
       } else {
-        // Update user's posts array
-        const { data: currentUser, error: userFetchError } = await supabase
-          .from('users')
-          .select('posts')
-          .eq('email', user.email)
-          .single();
-
-        if (!userFetchError && currentUser) {
-          const currentPosts = Array.isArray(currentUser.posts) ? currentUser.posts : [];
-          const updatedPosts = [newPost.id, ...currentPosts];
-
-          await supabase
-            .from('users')
-            .update({ posts: updatedPosts })
-            .eq('email', user.email);
-        }
+        // For user posts, user_id is already set in the post, no need to update users.posts array
+        // (users table doesn't have a posts column - we use user_id in posts table instead)
       }
 
       // Format post for app
+      // Always include userId, userName, and userAvatar in the formatted post
+      // (even if user_id column doesn't exist in DB, we still have this info in app state)
       const formattedPost = {
         id: newPost.id,
         charityId: newPost.charity_id, // NULL for user posts
-        userId: user.userType === 'user' ? user.id : null, // Track user ID for user posts
+        userId: user.userType === 'user' ? user.id : null, // Track user ID for user posts (in app state)
+        userName: user.userType === 'user' ? user.name : null, // Include user name for immediate display
+        userAvatar: user.userType === 'user' ? (user.avatar || user.avatar_url) : null, // Include user avatar
         type: newPost.type,
         title: newPost.title,
         content: newPost.content,
         image: newPost.image_url,
-        likes: newPost.likes_count,
-        comments: newPost.comments_count,
-        shares: newPost.shares_count,
+        likes: newPost.likes_count || 0,
+        comments: newPost.comments_count || 0,
+        shares: newPost.shares_count || 0,
         timestamp: newPost.created_at
       };
 
@@ -1231,25 +1339,45 @@ export const AuthProvider = ({ children }) => {
 
   const findUserIdForPost = async (postId) => {
     try {
-      // Find which user has this post ID in their posts array
-      const { data: users, error } = await supabase
-        .from('users')
-        .select('id, posts, user_type')
-        .contains('posts', [postId])
-        .eq('user_type', 'user')
-        .limit(1);
-
-      if (error) {
-        console.error('Error finding user for post:', error);
+      // First, try to get user_id directly from the post (if column exists)
+      const { data: postData, error: postError } = await supabase
+        .from('posts')
+        .select('user_id')
+        .eq('id', postId)
+        .single();
+      
+      // If error is about missing column, that's okay - column doesn't exist yet
+      if (postError && postError.code !== '42703') {
+        // Column doesn't exist error (42703) is okay, other errors are not
+        console.log('Note: user_id column may not exist in posts table yet');
         return null;
       }
-
-      if (users && users.length > 0) {
-        return users[0].id;
+      
+      if (postData && postData.user_id) {
+        // Get user info from users table
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('id, name, avatar_url')
+          .eq('id', postData.user_id)
+          .single();
+        
+        if (!userError && userData) {
+          return {
+            userId: userData.id,
+            userName: userData.name,
+            userAvatar: userData.avatar_url
+          };
+        }
       }
 
+      // If post doesn't have user_id, return null (can't identify user)
       return null;
     } catch (error) {
+      // If error is about missing column, that's expected if migration hasn't run
+      if (error.code === '42703') {
+        console.log('Note: user_id column doesn\'t exist in posts table - please run migration');
+        return null;
+      }
       console.error('Error finding user for post:', error);
       return null;
     }
@@ -1257,6 +1385,18 @@ export const AuthProvider = ({ children }) => {
 
   const loadUserProfileById = async (userId) => {
     try {
+      // Validate userId before querying
+      if (!userId || userId === 'unknown') {
+        return null;
+      }
+      
+      // Validate UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(userId)) {
+        console.error('Invalid userId format in loadUserProfileById:', userId);
+        return null;
+      }
+      
       const { data: userProfile, error } = await supabase
         .from('users')
         .select('*')
@@ -1266,30 +1406,35 @@ export const AuthProvider = ({ children }) => {
       if (error) throw error;
 
       if (userProfile) {
-        // Load user's posts if they have any
+        // Load user's posts - query posts by user_id (preferred method, if column exists)
         let userPosts = [];
-        if (userProfile.posts && Array.isArray(userProfile.posts) && userProfile.posts.length > 0) {
-          const { data: postsData, error: postsError } = await supabase
-            .from('posts')
-            .select('*')
-            .in('id', userProfile.posts)
-            .order('created_at', { ascending: false });
-          
-          if (!postsError && postsData) {
-            userPosts = postsData.map(post => ({
-              id: post.id,
-              charityId: post.charity_id,
-              userId: post.user_id || null,
-              type: post.type,
-              title: post.title,
-              content: post.content,
-              image: post.image_url,
-              likes: post.likes_count || 0,
-              comments: post.comments_count || 0,
-              shares: post.shares_count || 0,
-              timestamp: post.created_at
-            }));
-          }
+        
+        // Query posts where user_id matches this user
+        const { data: postsData, error: postsError } = await supabase
+          .from('posts')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+        
+        // Check if error is because column doesn't exist (code 42703)
+        if (postsError && postsError.code === '42703') {
+          // Column doesn't exist - need to run migration
+          console.log('⚠️ user_id column doesn\'t exist in posts table - please run migration');
+          userPosts = []; // Can't load user posts without user_id column
+        } else if (!postsError && postsData && postsData.length > 0) {
+          userPosts = postsData.map(post => ({
+            id: post.id,
+            charityId: post.charity_id,
+            userId: post.user_id || userId,
+            type: post.type,
+            title: post.title,
+            content: post.content,
+            image: post.image_url,
+            likes: post.likes_count || 0,
+            comments: post.comments_count || 0,
+            shares: post.shares_count || 0,
+            timestamp: post.created_at
+          }));
         }
 
         // Format user object

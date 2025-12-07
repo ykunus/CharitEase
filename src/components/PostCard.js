@@ -12,18 +12,52 @@ import { formatDate, getPostTypeIcon, getPostTypeColor } from '../utils/formatte
 
 const { width } = Dimensions.get('window');
 
-const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress, onUserPress, isLiked = false }) => {
+const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress, onUserPress, isLiked = false, onFindUserId }) => {
   const handleLike = () => {
     if (onLike) {
       onLike(post.id);
     }
   };
 
-  const handleAuthorPress = () => {
-    // If post has no charityId or charity has isUser flag, it's a user post
-    if ((post.charityId === null || charity?.isUser) && onUserPress) {
-      onUserPress(post.userId || charity?.id);
-    } else if (onCharityPress) {
+  const handleAuthorPress = async () => {
+    // Check if it's a user post: charity has isUser flag set to true
+    const isUserPost = charity?.isUser === true;
+    
+    if (isUserPost && onUserPress) {
+      // For user posts, get userId from charity.id first (this is the post author's ID)
+      // Then try post.userId, then try to find it
+      let userId = charity?.id || post.userId;
+      
+      // If userId is missing or invalid, try to find it
+      if ((!userId || userId === 'unknown' || userId === null) && onFindUserId) {
+        try {
+          const userInfo = await onFindUserId(post.id);
+          if (userInfo && userInfo.userId) {
+            userId = userInfo.userId;
+          }
+        } catch (err) {
+          console.log('Error finding userId for post:', err);
+        }
+      }
+      
+      // Only navigate if userId is valid (UUID format)
+      if (userId && userId !== 'unknown' && userId !== null) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(userId)) {
+          onUserPress(userId);
+        } else {
+          console.warn('Invalid userId format, cannot navigate:', userId);
+        }
+      } else {
+        console.warn('Cannot navigate to user profile: missing or invalid userId', { 
+          postUserId: post.userId, 
+          charityId: charity?.id,
+          charityIsUser: charity?.isUser,
+          postId: post.id
+        });
+      }
+    } else if (!isUserPost && onCharityPress && charity && charity.id) {
+      // For charity posts (not user posts), navigate to charity profile
       onCharityPress(charity);
     }
   };

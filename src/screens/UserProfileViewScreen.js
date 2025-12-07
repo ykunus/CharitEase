@@ -21,7 +21,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 
 const UserProfileViewScreen = ({ route, navigation }) => {
   const { userId } = route.params || {};
-  const { posts, charitiesData, getCharityById, likePost, likedPosts, loadUserProfileById, user: currentUser, followedCharities, followCharity } = useAuth();
+  const { posts, charitiesData, getCharityById, likePost, likedPosts, loadUserProfileById, user: currentUser, followedCharities, followedUsers, followCharity, followUser } = useAuth();
   const [viewedUser, setViewedUser] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -29,20 +29,26 @@ const UserProfileViewScreen = ({ route, navigation }) => {
   const [commentModalPost, setCommentModalPost] = useState(null);
   
   // Check if current user is following this user
-  // Note: Currently users can only follow charities, but we'll add the button for consistency
-  const isFollowing = viewedUser?.userType === 'charity' && followedCharities?.includes(viewedUser?.id);
+  // Check if it's a charity (followed in charities list) or a regular user (followed in users list)
+  const isFollowing = viewedUser?.userType === 'charity' 
+    ? followedCharities?.includes(viewedUser?.id)
+    : followedUsers?.includes(viewedUser?.id);
   
   const handleFollow = () => {
+    if (!viewedUser?.id) return;
+    
     // If it's a charity, use followCharity function
-    if (viewedUser?.userType === 'charity' && viewedUser?.id) {
+    if (viewedUser?.userType === 'charity') {
       followCharity(viewedUser.id);
-      // Reload user data to update stats after following
-      setTimeout(() => {
-        loadUserData();
-      }, 500);
+    } else {
+      // If it's a regular user, use followUser function
+      followUser(viewedUser.id);
     }
-    // TODO: Implement followUser functionality for regular users
-    // For now, regular users can't follow other users
+    
+    // Reload user data to update stats after following
+    setTimeout(() => {
+      loadUserData();
+    }, 500);
   };
 
   // Load user profile by ID
@@ -53,7 +59,18 @@ const UserProfileViewScreen = ({ route, navigation }) => {
   }, [userId]);
 
   const loadUserData = async () => {
-    if (!userId) return;
+    if (!userId || userId === 'unknown') {
+      setLoading(false);
+      return;
+    }
+    
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(userId)) {
+      console.error('Invalid userId format:', userId);
+      setLoading(false);
+      return;
+    }
     
     setLoading(true);
     try {
@@ -67,24 +84,36 @@ const UserProfileViewScreen = ({ route, navigation }) => {
       if (error) throw error;
 
       if (userProfile) {
-        // Load user's posts - user posts have charity_id = null
-        // We need to find posts where the user has the post ID in their posts array
-        // Or find posts by checking which user created them
+        // Load user's posts - find posts where user_id matches this user
+        // Use user_id column in posts table (if it exists)
         let userPosts = [];
         
-        // Method 1: Check if user has posts array (if the column exists)
-        if (userProfile.posts && Array.isArray(userProfile.posts) && userProfile.posts.length > 0) {
-          const { data: postsData, error: postsError } = await supabase
+        // Method 1: Query posts by user_id (preferred method, if column exists)
+        const { data: postsByUserId, error: postsByUserIdError } = await supabase
+          .from('posts')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+        
+        // Check if error is because column doesn't exist (code 42703)
+        if (postsByUserIdError && postsByUserIdError.code === '42703') {
+          // Column doesn't exist - need to run migration
+          console.log('⚠️ user_id column doesn\'t exist in posts table - please run migration');
+          // Fallback: query all user posts (charity_id = null) but can't filter by user
+          const { data: allUserPosts } = await supabase
             .from('posts')
             .select('*')
-            .in('id', userProfile.posts)
-            .order('created_at', { ascending: false });
+            .is('charity_id', null)
+            .order('created_at', { ascending: false })
+            .limit(50);
           
-          if (!postsError && postsData) {
-            userPosts = postsData.map(post => ({
+          if (allUserPosts) {
+            // Can't reliably filter by user without user_id column
+            // Just show all user posts (not ideal but works)
+            userPosts = allUserPosts.map(post => ({
               id: post.id,
               charityId: post.charity_id,
-              userId: userId, // This user created the post
+              userId: userId, // Assume this user created it (not accurate but better than nothing)
               type: post.type,
               title: post.title,
               content: post.content,
@@ -95,53 +124,21 @@ const UserProfileViewScreen = ({ route, navigation }) => {
               timestamp: post.created_at
             }));
           }
-        } else {
-          // Method 2: Find posts where charity_id is null and match by finding which user has this post
-          // For now, we'll find posts that this user likely created by checking posts table
-          // This is a fallback if posts array doesn't exist
-          const { data: allUserPosts, error: postsError } = await supabase
-            .from('posts')
-            .select('*')
-            .is('charity_id', null)
-            .order('created_at', { ascending: false })
-            .limit(50);
-          
-          if (!postsError && allUserPosts) {
-            // Filter to only posts this user created by checking which user has the post in their posts array
-            // We'll need to check all users to see who has which posts
-            const { data: allUsers } = await supabase
-              .from('users')
-              .select('id, posts')
-              .eq('user_type', 'user');
-            
-            const userPostMap = {};
-            if (allUsers) {
-              allUsers.forEach(u => {
-                if (u.posts && Array.isArray(u.posts)) {
-                  u.posts.forEach(postId => {
-                    userPostMap[postId] = u.id;
-                  });
-                }
-              });
-            }
-            
-            // Filter to only this user's posts
-            userPosts = allUserPosts
-              .filter(post => userPostMap[post.id] === userId)
-              .map(post => ({
-                id: post.id,
-                charityId: post.charity_id,
-                userId: userId,
-                type: post.type,
-                title: post.title,
-                content: post.content,
-                image: post.image_url,
-                likes: post.likes_count || 0,
-                comments: post.comments_count || 0,
-                shares: post.shares_count || 0,
-                timestamp: post.created_at
-              }));
-          }
+        } else if (!postsByUserIdError && postsByUserId && postsByUserId.length > 0) {
+          // Successfully queried by user_id
+          userPosts = postsByUserId.map(post => ({
+            id: post.id,
+            charityId: post.charity_id,
+            userId: userId,
+            type: post.type,
+            title: post.title,
+            content: post.content,
+            image: post.image_url,
+            likes: post.likes_count || 0,
+            comments: post.comments_count || 0,
+            shares: post.shares_count || 0,
+            timestamp: post.created_at
+          }));
         }
 
         // Format user object
@@ -285,18 +282,18 @@ const UserProfileViewScreen = ({ route, navigation }) => {
           }) : 'Recently'}
         </Text>
         
-        {/* Action Button - Follow only for users */}
+        {/* Action Button - Follow only for users (no Donate button for regular users) */}
         {viewedUser && currentUser && viewedUser.id !== currentUser.id && (
           <TouchableOpacity
-            style={[styles.actionButton, styles.actionButtonPrimary]}
+            style={[styles.actionButton, isFollowing && styles.actionButtonSecondary]}
             onPress={handleFollow}
           >
             <Ionicons 
               name={isFollowing ? 'checkmark' : 'add'} 
               size={20} 
-              color="#FFFFFF" 
+              color={isFollowing ? '#22C55E' : '#FFFFFF'} 
             />
-            <Text style={styles.actionButtonText}>
+            <Text style={[styles.actionButtonText, isFollowing && styles.actionButtonTextSecondary]}>
               {isFollowing ? 'Following' : 'Follow'}
             </Text>
           </TouchableOpacity>

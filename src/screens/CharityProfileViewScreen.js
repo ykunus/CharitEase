@@ -187,7 +187,14 @@ const CharityProfileViewScreen = ({ route, navigation }) => {
   };
 
   const handleUserPress = (userId) => {
-    navigation.navigate('UserProfileView', { userId });
+    // Don't navigate if userId is invalid or 'unknown'
+    if (userId && userId !== 'unknown') {
+      // Validate UUID format before navigating
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(userId)) {
+        navigation.navigate('UserProfileView', { userId });
+      }
+    }
   };
 
   const renderCompactStat = (icon, value, label, color) => (

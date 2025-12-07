@@ -37,7 +37,8 @@ const FeedScreen = ({ navigation }) => {
     likePost,
     user,
     likedPosts,
-    findUserIdForPost
+    findUserIdForPost,
+    loadUserProfileById
   } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -77,9 +78,18 @@ const FeedScreen = ({ navigation }) => {
     }
   };
 
-  const handleUserPress = (userId) => {
-    if (userId) {
+  const handleUserPress = async (userId) => {
+    // If userId is null or missing, try to find it from the post
+    if (!userId || userId === 'unknown' || userId === null) {
+      return; // Can't navigate without userId
+    }
+    
+    // Validate UUID format before navigating
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(userId)) {
       navigation.navigate('UserProfileView', { userId });
+    } else {
+      console.warn('Invalid userId format for navigation:', userId);
     }
   };
 
@@ -215,12 +225,12 @@ const FeedScreen = ({ navigation }) => {
     let postAuthor = charity;
     
     if (!charity && post.charityId === null) {
-      // This is a user post - check if we have user info in the post
-      if (post.userId && post.userName) {
-        // We have user info from the database
+      // This is a user post - prioritize user info from the post data
+      if (post.userId && post.userId !== 'unknown' && post.userId !== null) {
+        // We have userId - use it even if we don't have name yet
         postAuthor = {
-          id: post.userId,
-          name: post.userName,
+          id: post.userId, // This is critical - always set id when we have userId
+          name: post.userName || 'User', // Use userName if available, otherwise "User"
           logo: post.userAvatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
           verified: false,
           isUser: true
@@ -237,9 +247,10 @@ const FeedScreen = ({ navigation }) => {
             isUser: true
           };
         } else {
-          // Not current user's post, but still a user post - use fallback
+          // Not current user's post, but still a user post
+          // Try to find userId if we have post.userId
           postAuthor = {
-            id: post.userId || 'unknown',
+            id: post.userId && post.userId !== 'unknown' ? post.userId : null,
             name: post.userName || 'User',
             logo: post.userAvatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
             verified: false,
@@ -248,9 +259,8 @@ const FeedScreen = ({ navigation }) => {
         }
       } else {
         // Fallback: Create a generic user post author so it still renders
-        // This handles cases where user info hasn't been attached yet
         postAuthor = {
-          id: post.userId || 'unknown',
+          id: post.userId && post.userId !== 'unknown' && post.userId !== null ? post.userId : null,
           name: post.userName || 'User',
           logo: post.userAvatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
           verified: false,
@@ -259,7 +269,11 @@ const FeedScreen = ({ navigation }) => {
       }
     }
 
-    if (!postAuthor) return null;
+    // Only skip rendering if we don't have a postAuthor at all (shouldn't happen, but safety check)
+    if (!postAuthor) {
+      console.warn('Post has no author, skipping render:', post.id);
+      return null;
+    }
 
     const distanceFromUser =
       selectedTab === 'local' && typeof localDistances[post.id] === 'number'
@@ -283,6 +297,7 @@ const FeedScreen = ({ navigation }) => {
           onShare={() => handleShare(post)}
           onCharityPress={handleCharityPress}
           onUserPress={handleUserPress}
+          onFindUserId={findUserIdForPost}
         />
       </View>
     );
