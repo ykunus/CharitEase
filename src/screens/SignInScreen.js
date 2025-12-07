@@ -132,7 +132,8 @@ const SignInScreen = ({ navigation, route }) => {
       } else {
         await signIn({
           email: formData.email,
-          password: formData.password
+          password: formData.password,
+          expectedUserType: userType // Pass the expected user type (either 'user' or 'charity')
         });
       }
     } catch (error) {

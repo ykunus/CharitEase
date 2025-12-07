@@ -82,9 +82,12 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loadUserProfile = async (supabaseUser) => {
+  const loadUserProfile = async (supabaseUser, expectedUserType = null) => {
     try {
       console.log('🔄 Loading user profile for:', supabaseUser.email);
+      if (expectedUserType) {
+        console.log(`📋 Expected account type: ${expectedUserType}`);
+      }
       
       // First, check if this email exists in charities table (most reliable way to detect charity account)
       const { data: charityProfile, error: charityCheckError } = await supabase
@@ -104,6 +107,25 @@ export const AuthProvider = ({ children }) => {
         errorCode: charityCheckError?.code,
         isCharity 
       });
+      
+      // Prevent account type mismatch: if expecting a regular user but account is charity
+      if (expectedUserType === 'user' && isCharity) {
+        throw new Error('This is a charity account. Please use the "Sign In as Charity" option instead.');
+      }
+      
+      // Prevent account type mismatch: if expecting a charity but account is regular user
+      if (expectedUserType === 'charity' && !isCharity) {
+        // Double check: make sure it's actually a regular user, not just a missing charity
+        const { data: userProfile } = await supabase
+          .from('users')
+          .select('user_type')
+          .eq('email', supabaseUser.email)
+          .maybeSingle();
+        
+        if (userProfile && userProfile.user_type === 'user') {
+          throw new Error('This is a regular user account. Please use the "Sign In as User" option instead.');
+        }
+      }
       
       if (isCharity) {
         console.log('✅ Charity profile found, loading as charity account');
@@ -871,9 +893,12 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const signIn = async ({ email, password }) => {
+  const signIn = async ({ email, password, expectedUserType = null }) => {
     try {
       console.log('🔄 Signing in with Supabase...');
+      if (expectedUserType) {
+        console.log(`📋 Expected account type: ${expectedUserType}`);
+      }
       
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
@@ -891,14 +916,19 @@ export const AuthProvider = ({ children }) => {
 
       console.log('✅ Supabase auth successful');
 
-      // Load user profile from database
-      await loadUserProfile(authData.user);
+      // Load user profile from database with expected user type check
+      await loadUserProfile(authData.user, expectedUserType);
       setIsConnected(true);
       
       console.log('✅ Sign in successful!');
       return { user: authData.user };
     } catch (error) {
       console.error('Signin error:', error);
+      // If error message already contains helpful info (like "charity account"), use it
+      // Otherwise use generic message
+      if (error.message.includes('charity account') || error.message.includes('regular user')) {
+        throw error;
+      }
       throw new Error('Invalid email or password');
     }
   };
