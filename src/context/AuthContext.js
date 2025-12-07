@@ -84,93 +84,69 @@ export const AuthProvider = ({ children }) => {
 
   const loadUserProfile = async (supabaseUser) => {
     try {
-      // Determine user type from metadata
-      const userType = supabaseUser.user_metadata?.userType || 'user';
+      console.log('🔄 Loading user profile for:', supabaseUser.email);
       
-      if (userType === 'charity') {
-        // Load charity profile
-        const { data: charityProfile, error } = await supabase
+      // First, check if this email exists in charities table (most reliable way to detect charity account)
+      const { data: charityProfile, error: charityCheckError } = await supabase
           .from('charities')
           .select('*')
           .eq('email', supabaseUser.email)
           .single();
 
-        if (charityProfile) {
-          // Ensure charity has a corresponding entry in users table for likes/comments
-          // Check if user entry exists and load followed_charities
-          let userDbId = null;
-          let charityFollowedList = [];
-          const { data: existingUser } = await supabase
-            .from('users')
-            .select('id, followed_charities, followed_users')
-            .eq('email', supabaseUser.email)
-            .single();
-          
-          if (existingUser) {
-            userDbId = existingUser.id;
-            // Load followed charities from users table
-            charityFollowedList = Array.isArray(existingUser.followed_charities) 
-              ? existingUser.followed_charities 
-              : [];
-            // Load followed users if column exists
-            const userFollowedList = Array.isArray(existingUser.followed_users) 
-              ? existingUser.followed_users 
-              : [];
-            setFollowedUsers(userFollowedList);
-            console.log('✅ Found existing user entry for charity');
-            console.log(`✅ Loaded ${charityFollowedList.length} followed charities and ${userFollowedList.length} followed users for charity`);
-          } else {
-            // Create user entry for charity to enable likes/comments
-            // Note: posts column doesn't exist in users table (posts are tracked differently)
-            const { data: newUser, error: userError } = await supabase
-              .from('users')
-              .insert([{
-                email: supabaseUser.email,
-                name: charityProfile.name,
-                country: charityProfile.country,
-                user_type: 'charity',
-                avatar_url: charityProfile.logo_url,
-                total_donated: 0,
-                total_donations: 0,
-                followed_charities: []
-                // posts field removed - not a column in users table
-              }])
-              .select('id')
-              .single();
-            
-            if (userError) {
-              console.error('❌ Failed to create user entry for charity:', userError);
-              // Try to get it again in case it was created by another process
-              const { data: retryUser } = await supabase
-                .from('users')
-                .select('id')
-                .eq('email', supabaseUser.email)
-                .single();
-              if (retryUser) {
-                userDbId = retryUser.id;
-                console.log('✅ Found user entry on retry');
-              } else {
-                throw new Error('Failed to create or find user entry for charity. Cannot proceed.');
-              }
-            } else if (newUser) {
-              userDbId = newUser.id;
-              console.log('✅ Created user entry for charity');
-            } else {
-              throw new Error('Failed to create user entry for charity. Cannot proceed.');
-            }
-          }
-
-          // Ensure we have a valid users table ID
-          if (!userDbId) {
-            throw new Error('No valid users table ID found for charity. Cannot proceed.');
-          }
+      // Check if charity profile exists
+      // PGRST116 error means no rows found (expected for non-charity accounts)
+      // We need to check: if we have charityProfile data OR if error is NOT PGRST116 (meaning real error)
+      const charityNotFound = charityCheckError && charityCheckError.code === 'PGRST116';
+      const isCharity = !charityNotFound && charityProfile !== null && charityProfile !== undefined;
+      
+      console.log('🔍 Charity check result:', { 
+        hasProfile: !!charityProfile, 
+        errorCode: charityCheckError?.code,
+        isCharity 
+      });
+      
+      if (isCharity) {
+        console.log('✅ Charity profile found, loading as charity account');
+        // Check if user entry exists (but DO NOT create one - charities don't need user entries by default)
+        // User entries are only created when needed (e.g., when charity likes/comments for the first time)
+        let userDbId = null;
+        let charityFollowedList = [];
+        
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('id, followed_charities, followed_users, user_type')
+          .eq('email', supabaseUser.email)
+          .maybeSingle(); // Use maybeSingle() to avoid error when not found
+        
+        if (existingUser && existingUser.user_type === 'charity') {
+          // User entry exists from previous setup - use it
+          userDbId = existingUser.id;
+          charityFollowedList = Array.isArray(existingUser.followed_charities) 
+            ? existingUser.followed_charities 
+            : [];
+          const userFollowedList = Array.isArray(existingUser.followed_users) 
+            ? existingUser.followed_users 
+            : [];
+          setFollowedUsers(userFollowedList);
+          console.log('✅ Found existing user entry for charity (from previous setup)');
+          console.log(`✅ Loaded ${charityFollowedList.length} followed charities and ${userFollowedList.length} followed users for charity`);
+        } else if (existingUser && existingUser.user_type !== 'charity') {
+          // User entry exists but it's a regular user, not a charity - this is an error state
+          console.error('⚠️ Found user entry with different user_type. This should not happen.');
+          console.error('⚠️ Email:', supabaseUser.email, 'User type in DB:', existingUser.user_type);
+        } else {
+          // No user entry exists - this is NORMAL and EXPECTED for charity accounts
+          // User entries are only created when needed (e.g., when charity likes/comments)
+          console.log('ℹ️ No user entry found for charity - this is normal. Charity accounts do not require user entries.');
+          charityFollowedList = []; // Initialize empty list
+        }
 
           // Load charity's posts - query by charity_id (posts array column doesn't exist)
           let charityPosts = [];
           const { data: postsData, error: postsError } = await supabase
             .from('posts')
             .select('*')
-            .eq('charity_id', charity.id)
+            .eq('charity_id', charityProfile.id)
             .order('created_at', { ascending: false });
           
           if (!postsError && postsData && postsData.length > 0) {
@@ -221,8 +197,9 @@ export const AuthProvider = ({ children }) => {
           }
           
           setUser({
-            id: userDbId, // Use users table ID for likes/comments (required, no fallback)
+            id: userDbId || charityProfile.id, // Use users table ID for likes/comments, fallback to charityProfile.id if not available
             dbId: userDbId, // Store the users table ID separately
+            charityId: charityProfile.id, // Store charity ID separately for reference
             email: supabaseUser.email,
             name: charityProfile.name,
             country: charityProfile.country,
@@ -265,16 +242,56 @@ export const AuthProvider = ({ children }) => {
           }
           
           console.log(`✅ Loaded ${charityPosts.length} posts for charity`);
-        }
+          
+          // Make sure we've set everything up correctly
+          console.log('✅ Charity account loaded successfully:', {
+            email: supabaseUser.email,
+            name: charityProfile.name,
+            charityId: charityProfile.id,
+            userDbId: userDbId || 'none (will be created when needed)'
+          });
       } else {
+        // Not a charity - load regular user profile
+        // BUT FIRST: Check if there's a user entry with user_type='charity'
+        // This means the charity check above failed but we have a charity user entry
+        // In this case, we should try to load the charity profile again or throw a helpful error
+        
         // Load regular user profile
-        const { data: profile, error } = await supabase
+        const { data: profile, error: userError } = await supabase
           .from('users')
           .select('*')
           .eq('email', supabaseUser.email)
           .single();
 
-        if (profile) {
+        // Check if user was found (PGRST116 means not found)
+        const userNotFound = userError && userError.code === 'PGRST116';
+
+        if (profile && !userError) {
+          // CRITICAL CHECK: If user_type is 'charity', this is actually a charity account
+          // but the charity profile check above failed. This should not happen, but handle it.
+          if (profile.user_type === 'charity') {
+            console.error('⚠️ Found user entry with user_type=charity but charity profile check failed.');
+            console.error('⚠️ This indicates the charity profile might be missing or there was an error.');
+            
+            // Try one more time to get the charity profile
+            const { data: retryCharityProfile, error: retryError } = await supabase
+              .from('charities')
+              .select('*')
+              .eq('email', supabaseUser.email)
+              .single();
+            
+            if (retryCharityProfile && !retryError) {
+              console.log('✅ Found charity profile on retry, reloading as charity...');
+              // Recursively call loadUserProfile to load as charity
+              // But first, we need to make sure we don't loop - use a flag
+              // Actually, better to just reload directly here
+              // Let's throw an error that tells user to use charity sign-in
+              throw new Error('This is a charity account. Please use the "Sign In as Charity" option instead.');
+            } else {
+              throw new Error('Charity account detected but charity profile is missing. Please contact support.');
+            }
+          }
+          
           const followedList = Array.isArray(profile.followed_charities) 
             ? profile.followed_charities 
             : [];
@@ -283,30 +300,61 @@ export const AuthProvider = ({ children }) => {
             : [];
           setFollowedUsers(followedUsersList);
           
-          // Load user's posts if they have any
+          // Load user's posts - query by user_id (posts array column doesn't exist)
           let userPosts = [];
-          if (profile.posts && Array.isArray(profile.posts) && profile.posts.length > 0) {
-            const { data: postsData, error: postsError } = await supabase
-              .from('posts')
-              .select('*')
-              .in('id', profile.posts)
-              .order('created_at', { ascending: false });
+          
+          // Query posts by user_id
+          const { data: postsData, error: postsError } = await supabase
+            .from('posts')
+            .select('*')
+            .eq('user_id', profile.id)
+            .order('created_at', { ascending: false });
+          
+          if (!postsError && postsData && postsData.length > 0) {
+            // Get accurate likes and comments counts from database
+            const postIds = postsData.map(p => p.id);
             
-            if (!postsError && postsData) {
-              userPosts = postsData.map(post => ({
-                id: post.id,
-                charityId: post.charity_id,
-                userId: post.user_id || null,
-                type: post.type,
-                title: post.title,
-                content: post.content,
-                image: post.image_url,
-                likes: post.likes_count || 0,
-                comments: post.comments_count || 0,
-                shares: post.shares_count || 0,
-                timestamp: post.created_at
-              }));
+            // Get likes count per post
+            const { data: likesData } = await supabase
+              .from('likes')
+              .select('post_id')
+              .in('post_id', postIds);
+            
+            // Get comments count per post
+            const { data: commentsData } = await supabase
+              .from('comments')
+              .select('post_id')
+              .in('post_id', postIds);
+            
+            // Count likes and comments per post
+            const likesCount = {};
+            const commentsCount = {};
+            
+            if (likesData) {
+              likesData.forEach(like => {
+                likesCount[like.post_id] = (likesCount[like.post_id] || 0) + 1;
+              });
             }
+            
+            if (commentsData) {
+              commentsData.forEach(comment => {
+                commentsCount[comment.post_id] = (commentsCount[comment.post_id] || 0) + 1;
+              });
+            }
+            
+            userPosts = postsData.map(post => ({
+              id: post.id,
+              charityId: post.charity_id,
+              userId: post.user_id || null,
+              type: post.type,
+              title: post.title,
+              content: post.content,
+              image: post.image_url,
+              likes: likesCount[post.id] || 0, // Use actual count from likes table
+              comments: commentsCount[post.id] || 0, // Use actual count from comments table
+              shares: post.shares_count || 0,
+              timestamp: post.created_at
+            }));
           }
           
           setUser({
@@ -342,60 +390,42 @@ export const AuthProvider = ({ children }) => {
           }
           
           console.log(`✅ Loaded ${followedList.length} followed charities and ${userPosts.length} posts from database`);
-        } else {
-          // Create profile if it doesn't exist
-          const newProfile = {
-            email: supabaseUser.email,
-            name: supabaseUser.user_metadata?.name || 'User',
-            country: supabaseUser.user_metadata?.country || 'Unknown',
-            bio: supabaseUser.user_metadata?.bio || '',
-            avatar_url: null,
-            total_donated: 0,
-            total_donations: 0
-          };
-
-          const { data: createdProfile, error: createError } = await supabase
-            .from('users')
-            .insert([newProfile])
-            .select()
-            .single();
-
-          if (createdProfile) {
-            setUser({
-              id: createdProfile.id, // Use users table ID for likes/comments
-              email: supabaseUser.email,
-              name: createdProfile.name,
-              country: createdProfile.country,
-              bio: createdProfile.bio || '',
-              avatar: createdProfile.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-              totalDonated: 0,
-              totalDonations: 0,
-              followedCharities: [],
-              joinedDate: createdProfile.created_at,
-              userType: 'user'
-            });
-            setIsAuthenticated(true);
-            setIsConnected(true);
+        } else if (userNotFound) {
+          // User profile doesn't exist - check if maybe it's a charity account
+          // Try one more time to see if charity exists (in case the first check had a different error)
+          console.log('⚠️ User profile not found, double-checking if this is a charity account...');
+          const { data: doubleCheckCharity, error: doubleCheckError } = await supabase
+            .from('charities')
+            .select('id, name, email')
+            .eq('email', supabaseUser.email)
+            .maybeSingle(); // Use maybeSingle() to avoid error on no rows
+          
+          if (doubleCheckCharity && !doubleCheckError) {
+            throw new Error('This is a charity account. Please use the "Sign In as Charity" option instead.');
           }
+          
+          // No charity found either - account truly doesn't exist
+          console.error('⚠️ User profile not found in database for sign-in.');
+          console.error('⚠️ Email:', supabaseUser.email);
+          throw new Error('Account not found. Please make sure you are signing in with the correct account type (User or Charity), or sign up first.');
+        } else if (userError) {
+          // Some other database error occurred
+          console.error('⚠️ Error loading user profile:', userError);
+          throw new Error('Failed to load user profile. Please try again.');
+        } else {
+          // Profile is null but no error - shouldn't happen but handle it
+          console.error('⚠️ User profile is null but no error reported.');
+          throw new Error('Failed to load user profile. Please try again.');
         }
       }
     } catch (error) {
-      console.log('Profile load error:', error);
-      // Fallback to demo user if database fails
-      const demoUser = await AsyncStorage.getItem('demoUser');
-      if (demoUser) {
-        const parsedUser = JSON.parse(demoUser);
-        const fallbackFollowed = Array.isArray(parsedUser.followedCharities)
-          ? parsedUser.followedCharities
-          : [];
-
-        setUser({
-          ...parsedUser,
-          followedCharities: fallbackFollowed
-        });
-        setFollowedCharities(fallbackFollowed);
-        setIsAuthenticated(true);
-      }
+      console.error('❌ Profile load error:', error);
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack
+      });
+      // Re-throw the error so signIn/signUp can handle it
+      throw error;
     }
   };
 
@@ -758,29 +788,10 @@ export const AuthProvider = ({ children }) => {
         }
 
         console.log('✅ Charity profile created in database');
-
-        // Also create a user entry for likes/comments
-        const charityUserEntry = {
-          email: email,
-          name: additionalData.charityName || name,
-          country: country,
-          user_type: 'charity',
-          avatar_url: logoUrl, // Use same logo as charity
-          total_donated: 0,
-          total_donations: 0,
-          followed_charities: []
-          // posts field removed - not a column in users table
-        };
-
-        const { error: userEntryError } = await supabase
-          .from('users')
-          .insert([charityUserEntry]);
-
-        if (userEntryError) {
-          console.log('⚠️ Could not create user entry for charity (may already exist):', userEntryError.message);
-        } else {
-          console.log('✅ Created user entry for charity (enables likes/comments)');
-        }
+        
+        // NOTE: We do NOT create a user entry here during sign-up
+        // User entries are only created when needed (e.g., when charity tries to like/comment)
+        // This avoids duplicate entries and keeps charity and user accounts separate
 
         // Add to local charities list
         // Use location data if provided, otherwise default
@@ -1277,30 +1288,101 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
-    // Verify the user ID exists in the users table before attempting to like
-    // This prevents foreign key violations
-    try {
-      const { data: userCheck, error: checkError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('id', userId)
-        .single();
-
-      if (checkError || !userCheck) {
-        console.error('❌ User ID not found in users table:', userId, checkError);
-        console.log('⚠️ User object:', { id: user.id, dbId: user.dbId, email: user.email, userType: user.userType });
-        // Try to fix by reloading user profile
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          console.log('🔄 Attempting to reload user profile to fix ID...');
-          await loadUserProfile(session.user);
-          console.log('✅ Please try liking the post again');
+    // For charities, we need to ensure they have a user entry for likes/comments
+    // Create it on-demand if it doesn't exist (lazy creation)
+    let actualUserId = userId;
+    
+    if (user.userType === 'charity' && !user.dbId) {
+      // Charity doesn't have a user entry yet - create one on-demand
+      console.log('ℹ️ Charity account needs user entry for likes/comments, creating one...');
+      
+      try {
+        // Get charity profile to get name, logo, etc.
+        const { data: charityProfile } = await supabase
+          .from('charities')
+          .select('name, country, logo_url, email')
+          .eq('email', user.email)
+          .single();
+        
+        if (charityProfile) {
+          // Create user entry for charity
+          const { data: newUserEntry, error: createError } = await supabase
+            .from('users')
+            .insert([{
+              email: user.email,
+              name: charityProfile.name,
+              country: charityProfile.country,
+              user_type: 'charity',
+              avatar_url: charityProfile.logo_url,
+              total_donated: 0,
+              total_donations: 0,
+              followed_charities: []
+            }])
+            .select('id')
+            .single();
+          
+          if (createError) {
+            // If duplicate key error, fetch existing entry
+            if (createError.code === '23505') {
+              console.log('⚠️ User entry already exists, fetching...');
+              const { data: existingUser } = await supabase
+                .from('users')
+                .select('id')
+                .eq('email', user.email)
+                .eq('user_type', 'charity')
+                .single();
+              
+              if (existingUser) {
+                actualUserId = existingUser.id;
+                // Update user state with the new dbId
+                setUser(prev => prev ? { ...prev, dbId: existingUser.id, id: existingUser.id } : prev);
+                console.log('✅ Found existing user entry for charity');
+              } else {
+                console.error('❌ Could not create or find user entry for charity:', createError);
+                return;
+              }
+            } else {
+              console.error('❌ Failed to create user entry for charity:', createError);
+              return;
+            }
+          } else if (newUserEntry) {
+            actualUserId = newUserEntry.id;
+            // Update user state with the new dbId
+            setUser(prev => prev ? { ...prev, dbId: newUserEntry.id, id: newUserEntry.id } : null);
+            console.log('✅ Created user entry for charity (enables likes/comments)');
+          }
+        } else {
+          console.error('❌ Could not find charity profile');
+          return;
         }
+      } catch (createErr) {
+        console.error('❌ Error creating user entry for charity:', createErr);
         return;
       }
-    } catch (verifyError) {
-      console.error('❌ Error verifying user ID:', verifyError);
-      return;
+    } else {
+      // For regular users or charities that already have user entries, verify the user ID exists
+      try {
+        const { data: userCheck, error: checkError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', userId)
+          .maybeSingle(); // Use maybeSingle() to avoid error when not found
+
+        if (checkError && checkError.code !== 'PGRST116') {
+          // Real error (not "not found")
+          console.error('❌ Error checking user ID:', checkError);
+          return;
+        }
+        
+        if (!userCheck) {
+          console.error('❌ User ID not found in users table:', userId);
+          console.log('⚠️ User object:', { id: user.id, dbId: user.dbId, email: user.email, userType: user.userType });
+          return;
+        }
+      } catch (verifyError) {
+        console.error('❌ Error verifying user ID:', verifyError);
+        return;
+      }
     }
 
     // Check if user already liked this post
@@ -1312,7 +1394,7 @@ export const AuthProvider = ({ children }) => {
         const { error } = await supabase
           .from('likes')
           .delete()
-          .eq('user_id', userId)
+          .eq('user_id', actualUserId)
           .eq('post_id', postId);
 
         if (error) throw error;
@@ -1331,7 +1413,7 @@ export const AuthProvider = ({ children }) => {
         const { error } = await supabase
           .from('likes')
           .insert([{
-            user_id: userId,
+            user_id: actualUserId,
             post_id: postId
           }]);
 
@@ -1363,12 +1445,81 @@ export const AuthProvider = ({ children }) => {
       throw new Error('Comment content is required');
     }
 
+    // For charities, ensure they have a user entry for comments (lazy creation)
+    let actualUserId = user.id;
+    
+    if (user.userType === 'charity' && !user.dbId) {
+      // Charity doesn't have a user entry yet - create one on-demand
+      console.log('ℹ️ Charity account needs user entry for comments, creating one...');
+      
+      try {
+        // Get charity profile to get name, logo, etc.
+        const { data: charityProfile } = await supabase
+          .from('charities')
+          .select('name, country, logo_url, email')
+          .eq('email', user.email)
+          .single();
+        
+        if (charityProfile) {
+          // Create user entry for charity
+          const { data: newUserEntry, error: createError } = await supabase
+            .from('users')
+            .insert([{
+              email: user.email,
+              name: charityProfile.name,
+              country: charityProfile.country,
+              user_type: 'charity',
+              avatar_url: charityProfile.logo_url,
+              total_donated: 0,
+              total_donations: 0,
+              followed_charities: []
+            }])
+            .select('id')
+            .single();
+          
+          if (createError) {
+            // If duplicate key error, fetch existing entry
+            if (createError.code === '23505') {
+              console.log('⚠️ User entry already exists, fetching...');
+              const { data: existingUser } = await supabase
+                .from('users')
+                .select('id')
+                .eq('email', user.email)
+                .eq('user_type', 'charity')
+                .single();
+              
+              if (existingUser) {
+                actualUserId = existingUser.id;
+                // Update user state with the new dbId
+                setUser(prev => prev ? { ...prev, dbId: existingUser.id, id: existingUser.id } : prev);
+                console.log('✅ Found existing user entry for charity');
+              } else {
+                throw new Error('Could not create or find user entry for charity');
+              }
+            } else {
+              throw new Error('Failed to create user entry for charity: ' + createError.message);
+            }
+          } else if (newUserEntry) {
+            actualUserId = newUserEntry.id;
+            // Update user state with the new dbId
+            setUser(prev => prev ? { ...prev, dbId: newUserEntry.id, id: newUserEntry.id } : null);
+            console.log('✅ Created user entry for charity (enables comments)');
+          }
+        } else {
+          throw new Error('Could not find charity profile');
+        }
+      } catch (createErr) {
+        console.error('❌ Error creating user entry for charity:', createErr);
+        throw new Error('Failed to set up charity account for commenting');
+      }
+    }
+
     try {
       // Add comment to database
       const { data: newComment, error } = await supabase
         .from('comments')
         .insert([{
-          user_id: user.id,
+          user_id: actualUserId,
           post_id: postId,
           content: content.trim()
         }])
