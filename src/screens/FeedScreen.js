@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -36,13 +36,15 @@ const FeedScreen = ({ navigation }) => {
     getCharityById,
     likePost,
     user,
-    likedPosts
+    likedPosts,
+    findUserIdForPost
   } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedTab, setSelectedTab] = useState('following');
   const [distance, setDistance] = useState(DEFAULT_DISTANCE_MILES);
   const [commentModalPost, setCommentModalPost] = useState(null);
+  const [userPostAuthors, setUserPostAuthors] = useState({}); // Map of postId -> userInfo
 
   const userLocation = user?.location || userProfile.location;
 
@@ -68,10 +70,16 @@ const FeedScreen = ({ navigation }) => {
   };
 
   const handleCharityPress = (charity) => {
-    navigation.navigate('Charities', {
-      screen: 'CharityDetail',
-      params: { charity }
-    });
+    // Navigate to charity profile view (same as what charity sees)
+    if (charity && charity.id) {
+      navigation.navigate('CharityProfileView', { charityId: charity.id });
+    }
+  };
+
+  const handleUserPress = (userId) => {
+    if (userId) {
+      navigation.navigate('UserProfileView', { userId });
+    }
   };
 
   const sortedPosts = useMemo(() => {
@@ -185,13 +193,34 @@ const FeedScreen = ({ navigation }) => {
     // For charity posts, get charity info
     const charity = post.charityId ? getCharityById(post.charityId) : null;
     
-    // For user posts (no charity), create a mock charity object from user
-    const postAuthor = charity || (post.charityId === null && user ? {
-      id: user.id,
-      name: user.name,
-      logo: user.avatar,
-      verified: false
-    } : null);
+    // For user posts (no charity), create author object from post data or current user
+    let postAuthor = charity;
+    
+    if (!charity && post.charityId === null) {
+      // This is a user post - check if we have user info in the post
+      if (post.userId && post.userName) {
+        // We have user info from the database
+        postAuthor = {
+          id: post.userId,
+          name: post.userName,
+          logo: post.userAvatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+          verified: false,
+          isUser: true
+        };
+      } else if (user && post.id && user.posts) {
+        // Check if this is the current user's post
+        const userPostIds = user.posts.map(p => typeof p === 'object' ? p.id : p);
+        if (userPostIds.includes(String(post.id))) {
+          postAuthor = {
+            id: user.id,
+            name: user.name,
+            logo: user.avatar,
+            verified: false,
+            isUser: true
+          };
+        }
+      }
+    }
 
     if (!postAuthor) return null;
 
@@ -216,6 +245,7 @@ const FeedScreen = ({ navigation }) => {
           onComment={() => handleComment(post)}
           onShare={() => handleShare(post)}
           onCharityPress={handleCharityPress}
+          onUserPress={handleUserPress}
         />
       </View>
     );

@@ -510,20 +510,54 @@ export const AuthProvider = ({ children }) => {
           });
         }
         
+        // For user posts (charity_id is null), find which user created them
+        // by checking which user has the post ID in their posts array
+        const userPostsMap = {};
+        const userPostsIds = postsFromDB.filter(p => !p.charity_id).map(p => p.id);
+        
+        if (userPostsIds.length > 0) {
+          // Find users who have these posts in their posts array
+          const { data: usersWithPosts } = await supabase
+            .from('users')
+            .select('id, posts, name, avatar_url')
+            .eq('user_type', 'user');
+          
+          if (usersWithPosts) {
+            usersWithPosts.forEach(user => {
+              if (user.posts && Array.isArray(user.posts)) {
+                user.posts.forEach(postId => {
+                  if (userPostsIds.includes(postId)) {
+                    userPostsMap[postId] = {
+                      userId: user.id,
+                      userName: user.name,
+                      userAvatar: user.avatar_url
+                    };
+                  }
+                });
+              }
+            });
+          }
+        }
+        
         // Transform database format to app format
-        const formattedPosts = postsFromDB.map(post => ({
-          id: post.id,
-          charityId: post.charity_id,
-          userId: null, // Posts table doesn't have user_id, tracked via user.posts array
-          type: post.type,
-          title: post.title,
-          content: post.content,
-          image: post.image_url,
-          likes: likesCount[post.id] || 0, // Use actual count from likes table
-          comments: commentsCount[post.id] || 0, // Use actual count from comments table
-          shares: post.shares_count || 0,
-          timestamp: post.created_at
-        }));
+        const formattedPosts = postsFromDB.map(post => {
+          const userPostInfo = userPostsMap[post.id];
+          return {
+            id: post.id,
+            charityId: post.charity_id,
+            userId: userPostInfo?.userId || null, // Track which user created this post
+            userName: userPostInfo?.userName || null, // Store user name for display
+            userAvatar: userPostInfo?.userAvatar || null, // Store user avatar for display
+            type: post.type,
+            title: post.title,
+            content: post.content,
+            image: post.image_url,
+            likes: likesCount[post.id] || 0, // Use actual count from likes table
+            comments: commentsCount[post.id] || 0, // Use actual count from comments table
+            shares: post.shares_count || 0,
+            timestamp: post.created_at
+          };
+        });
         
         setPosts(formattedPosts);
         console.log(`✅ Loaded ${formattedPosts.length} posts from database`);
@@ -991,11 +1025,11 @@ export const AuthProvider = ({ children }) => {
 
         // Update local state
         setLikedPosts(prev => prev.filter(id => id !== postId));
-        setPosts(prev => prev.map(post => 
-          post.id === postId 
+    setPosts(prev => prev.map(post => 
+      post.id === postId 
             ? { ...post, likes: Math.max(0, (post.likes || 0) - 1) }
-            : post
-        ));
+        : post
+    ));
         
         console.log('✅ Post unliked');
       } else {
@@ -1186,6 +1220,160 @@ export const AuthProvider = ({ children }) => {
     return posts.filter(post => followedCharities.includes(post.charityId));
   };
 
+  const findUserIdForPost = async (postId) => {
+    try {
+      // Find which user has this post ID in their posts array
+      const { data: users, error } = await supabase
+        .from('users')
+        .select('id, posts, user_type')
+        .contains('posts', [postId])
+        .eq('user_type', 'user')
+        .limit(1);
+
+      if (error) {
+        console.error('Error finding user for post:', error);
+        return null;
+      }
+
+      if (users && users.length > 0) {
+        return users[0].id;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error finding user for post:', error);
+      return null;
+    }
+  };
+
+  const loadUserProfileById = async (userId) => {
+    try {
+      const { data: userProfile, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) throw error;
+
+      if (userProfile) {
+        // Load user's posts if they have any
+        let userPosts = [];
+        if (userProfile.posts && Array.isArray(userProfile.posts) && userProfile.posts.length > 0) {
+          const { data: postsData, error: postsError } = await supabase
+            .from('posts')
+            .select('*')
+            .in('id', userProfile.posts)
+            .order('created_at', { ascending: false });
+          
+          if (!postsError && postsData) {
+            userPosts = postsData.map(post => ({
+              id: post.id,
+              charityId: post.charity_id,
+              userId: post.user_id || null,
+              type: post.type,
+              title: post.title,
+              content: post.content,
+              image: post.image_url,
+              likes: post.likes_count || 0,
+              comments: post.comments_count || 0,
+              shares: post.shares_count || 0,
+              timestamp: post.created_at
+            }));
+          }
+        }
+
+        // Format user object
+        return {
+          id: userProfile.id,
+          email: userProfile.email,
+          name: userProfile.name,
+          country: userProfile.country,
+          bio: userProfile.bio || '',
+          avatar: userProfile.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+          totalDonated: userProfile.total_donated || 0,
+          totalDonations: userProfile.total_donations || 0,
+          followedCharities: Array.isArray(userProfile.followed_charities) 
+            ? userProfile.followed_charities 
+            : [],
+          posts: userPosts,
+          joinedDate: userProfile.created_at || new Date().toISOString(),
+          userType: userProfile.user_type || 'user'
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error loading user profile by ID:', error);
+      return null;
+    }
+  };
+
+  const loadCharityProfileById = async (charityId) => {
+    try {
+      const { data: charityProfile, error } = await supabase
+        .from('charities')
+        .select('*')
+        .eq('id', charityId)
+        .single();
+
+      if (error) throw error;
+
+      if (charityProfile) {
+        // Load charity's posts if they have any
+        let charityPosts = [];
+        if (charityProfile.posts && Array.isArray(charityProfile.posts) && charityProfile.posts.length > 0) {
+          const { data: postsData, error: postsError } = await supabase
+            .from('posts')
+            .select('*')
+            .in('id', charityProfile.posts)
+            .order('created_at', { ascending: false });
+          
+          if (!postsError && postsData) {
+            charityPosts = postsData.map(post => ({
+              id: post.id,
+              charityId: post.charity_id,
+              userId: null,
+              type: post.type,
+              title: post.title,
+              content: post.content,
+              image: post.image_url,
+              likes: post.likes_count || 0,
+              comments: post.comments_count || 0,
+              shares: post.shares_count || 0,
+              timestamp: post.created_at
+            }));
+          }
+        }
+
+        // Format charity object
+        return {
+          id: charityProfile.id,
+          email: charityProfile.email,
+          name: charityProfile.name,
+          category: charityProfile.category,
+          country: charityProfile.country,
+          mission: charityProfile.mission || '',
+          logo: charityProfile.logo_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+          coverImage: charityProfile.cover_image_url || charityProfile.logo_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+          totalRaised: charityProfile.total_raised || 0,
+          followers: charityProfile.followers || 0,
+          verified: charityProfile.verified || false,
+          foundedYear: charityProfile.founded_year || null,
+          website: charityProfile.website || null,
+          phone: charityProfile.phone || null,
+          address: charityProfile.address || null,
+          posts: charityPosts,
+          joinedDate: charityProfile.created_at || new Date().toISOString(),
+          userType: 'charity'
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error loading charity profile by ID:', error);
+      return null;
+    }
+  };
+
   const value = {
     user,
     isAuthenticated,
@@ -1210,6 +1398,9 @@ export const AuthProvider = ({ children }) => {
     getCharityById,
     getFollowedCharitiesData,
     getFollowedCharitiesPosts,
+    loadUserProfileById,
+    loadCharityProfileById,
+    findUserIdForPost,
     testSupabaseConnection
   };
 

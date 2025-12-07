@@ -12,15 +12,18 @@ import { formatDate, getPostTypeIcon, getPostTypeColor } from '../utils/formatte
 
 const { width } = Dimensions.get('window');
 
-const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress, isLiked = false }) => {
+const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress, onUserPress, isLiked = false }) => {
   const handleLike = () => {
     if (onLike) {
       onLike(post.id);
     }
   };
 
-  const handleCharityPress = () => {
-    if (onCharityPress) {
+  const handleAuthorPress = () => {
+    // If post has no charityId or charity has isUser flag, it's a user post
+    if ((post.charityId === null || charity?.isUser) && onUserPress) {
+      onUserPress(post.userId || charity?.id);
+    } else if (onCharityPress) {
       onCharityPress(charity);
     }
   };
@@ -29,7 +32,7 @@ const PostCard = ({ post, charity, onLike, onComment, onShare, onCharityPress, i
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.charityInfo} onPress={handleCharityPress}>
+        <TouchableOpacity style={styles.charityInfo} onPress={handleAuthorPress}>
           <Image source={{ uri: charity.logo }} style={styles.charityLogo} />
           <View style={styles.charityDetails}>
             <Text style={styles.charityName}>{charity.name}</Text>

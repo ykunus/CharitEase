@@ -16,6 +16,8 @@ import SignInScreen from '../screens/SignInScreen';
 import LocalCharityMapScreen from '../screens/LocalCharityMapScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import CreatePostScreen from '../screens/CreatePostScreen';
+import UserProfileViewScreen from '../screens/UserProfileViewScreen';
+import CharityProfileViewScreen from '../screens/CharityProfileViewScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -48,6 +50,20 @@ const FeedStackNavigator = () => {
           headerTintColor: '#1F2937',
           headerStyle: { backgroundColor: '#FFFFFF' },
           headerTitleStyle: { fontWeight: '600' },
+        }}
+      />
+      <FeedStack.Screen
+        name="UserProfileView"
+        component={UserProfileViewScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <FeedStack.Screen
+        name="CharityProfileView"
+        component={CharityProfileViewScreen}
+        options={{
+          headerShown: false,
         }}
       />
     </FeedStack.Navigator>
