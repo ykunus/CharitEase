@@ -174,10 +174,10 @@ const LocalCharityMapScreen = ({ route, navigation }) => {
   };
 
   const handleCharityPress = (charity) => {
-    navigation.navigate('Charities', {
-      screen: 'CharityDetail',
-      params: { charity },
-    });
+    // Navigate to the new charity profile view screen
+    if (charity && charity.id) {
+      navigation.navigate('CharityProfileView', { charityId: charity.id });
+    }
   };
 
   if (!region) {
@@ -221,6 +221,7 @@ const LocalCharityMapScreen = ({ route, navigation }) => {
             }}
             title={charity.name}
             description={`${charity.category} • ${formatDistance(charity.distance)} away`}
+            onPress={() => handleCharityPress(charity)}
           />
         ))}
       </MapView>

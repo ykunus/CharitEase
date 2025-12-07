@@ -557,31 +557,44 @@ export const AuthProvider = ({ children }) => {
         }
 
         // Transform database format to app format
-        const formattedCharities = charitiesFromDB.map(charity => ({
-          id: charity.id,
-          name: charity.name,
-          category: charity.category,
-          country: charity.country,
-          email: charity.email,
-          location: {
-            city: charity.country,
+        const formattedCharities = charitiesFromDB.map(charity => {
+          // Parse address to extract city if possible, otherwise use country
+          let city = charity.country;
+          if (charity.address) {
+            // Try to extract city from address (format: "City, Region, Country")
+            const parts = charity.address.split(',');
+            if (parts.length > 0) {
+              city = parts[0].trim();
+            }
+          }
+          
+          return {
+            id: charity.id,
+            name: charity.name,
+            category: charity.category,
             country: charity.country,
-            latitude: 0,
-            longitude: 0
-          },
-          founded: charity.founded_year,
-          verified: charity.verified,
-          logo: charity.logo_url,
-          coverImage: charity.cover_image_url,
-          mission: charity.mission,
-          website: charity.website,
-          phone: charity.phone,
-          address: charity.address,
-          totalRaised: charity.total_raised || 0,
-          followers: charity.followers || 0,
-          impact: charity.impact || {},
-          posts: charityPostsMap[charity.id] || []
-        }));
+            email: charity.email,
+            location: {
+              city: city,
+              country: charity.country,
+              // Use location_lat and location_lon from database, fallback to 0 if not available
+              latitude: typeof charity.location_lat === 'number' ? charity.location_lat : 0,
+              longitude: typeof charity.location_lon === 'number' ? charity.location_lon : 0
+            },
+            founded: charity.founded_year,
+            verified: charity.verified,
+            logo: charity.logo_url,
+            coverImage: charity.cover_image_url,
+            mission: charity.mission,
+            website: charity.website,
+            phone: charity.phone,
+            address: charity.address,
+            totalRaised: charity.total_raised || 0,
+            followers: charity.followers || 0,
+            impact: charity.impact || {},
+            posts: charityPostsMap[charity.id] || []
+          };
+        });
         
         setCharitiesData(formattedCharities);
         console.log(`✅ Loaded ${formattedCharities.length} charities from database`);
@@ -779,6 +792,9 @@ export const AuthProvider = ({ children }) => {
         // Handle logo URL - use provided avatarUrl or default
         const logoUrl = additionalData.avatarUrl || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&h=200&fit=crop&crop=face';
         
+        // Prepare location data for saving to database
+        const locationDataForDb = additionalData.location || null;
+        
         const charityProfile = {
           email: email,
           name: additionalData.charityName || name,
@@ -791,18 +807,71 @@ export const AuthProvider = ({ children }) => {
           mission: additionalData.mission || '',
           website: additionalData.website || '',
           phone: additionalData.phone || '',
-          address: additionalData.address || (additionalData.location?.address || ''),
+          address: additionalData.address || (locationDataForDb?.address || ''),
           total_raised: 0,
           followers: 0,
           impact: {}
           // posts field removed - not a column in charities table
         };
-
-        const { data: charity, error: charityError } = await supabase
-          .from('charities')
-          .insert([charityProfile])
-          .select()
-          .single();
+        
+        // Try to insert with location coordinates if available and columns exist
+        let charity = null;
+        let charityError = null;
+        
+        if (locationDataForDb && typeof locationDataForDb.latitude === 'number' && typeof locationDataForDb.longitude === 'number') {
+          // Try inserting with location columns first
+          const charityProfileWithLocation = {
+            ...charityProfile,
+            location_lat: locationDataForDb.latitude,
+            location_lon: locationDataForDb.longitude
+          };
+          
+          const result = await supabase
+            .from('charities')
+            .insert([charityProfileWithLocation])
+            .select()
+            .single();
+          
+          charity = result.data;
+          charityError = result.error;
+          
+          // If error is due to missing columns, retry without them
+          // Check for PGRST204 or error message mentioning missing column
+          if (charityError && (
+            charityError.code === 'PGRST204' || 
+            (charityError.message && (
+              charityError.message.includes('location_lat') ||
+              charityError.message.includes('location_lon') ||
+              charityError.message.includes('column') ||
+              charityError.message.includes('schema cache')
+            ))
+          )) {
+            console.log('⚠️ location_lat/location_lon columns not found in database, creating charity without location coordinates');
+            console.log('⚠️ Error details:', charityError.message);
+            const retryResult = await supabase
+              .from('charities')
+              .insert([charityProfile])
+              .select()
+              .single();
+            
+            charity = retryResult.data;
+            charityError = retryResult.error;
+            
+            if (!charityError) {
+              console.log('✅ Charity created successfully (location columns will be available after running migration)');
+            }
+          }
+        } else {
+          // No location data, insert without location columns
+          const result = await supabase
+            .from('charities')
+            .insert([charityProfile])
+            .select()
+            .single();
+          
+          charity = result.data;
+          charityError = result.error;
+        }
 
         if (charityError) {
           console.error('Charity profile creation error:', charityError);
@@ -816,13 +885,19 @@ export const AuthProvider = ({ children }) => {
         // This avoids duplicate entries and keeps charity and user accounts separate
 
         // Add to local charities list
-        // Use location data if provided, otherwise default
-        const locationInfo = additionalData.location || {
-          latitude: 0,
-          longitude: 0,
-          city: charity.country,
-          country: charity.country
-        };
+        // Use location data from database (charity.location_lat/location_lon) if available, otherwise from signup data
+        const locationDataForLocal = locationDataForDb || (charity.location_lat && charity.location_lon ? {
+          latitude: charity.location_lat,
+          longitude: charity.location_lon
+        } : null);
+        
+        let city = charity.country;
+        if (charity.address) {
+          const parts = charity.address.split(',');
+          if (parts.length > 0) {
+            city = parts[0].trim();
+          }
+        }
         
         const newCharity = {
           id: charity.id,
@@ -830,10 +905,10 @@ export const AuthProvider = ({ children }) => {
           category: charity.category,
           country: charity.country,
           location: {
-            city: locationInfo.city || charity.country,
-            country: locationInfo.country || charity.country,
-            latitude: locationInfo.latitude || 0,
-            longitude: locationInfo.longitude || 0
+            city: locationDataForLocal?.city || city || charity.country,
+            country: locationDataForLocal?.country || charity.country,
+            latitude: locationDataForLocal?.latitude || charity.location_lat || 0,
+            longitude: locationDataForLocal?.longitude || charity.location_lon || 0
           },
           founded: charity.founded_year,
           verified: charity.verified,

@@ -10,7 +10,6 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import FeedScreen from '../screens/FeedScreen';
 import CharitiesScreen from '../screens/CharitiesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
-import CharityDetailScreen from '../screens/CharityDetailScreen';
 import WelcomeScreen from '../screens/WelcomeScreen';
 import SignInScreen from '../screens/SignInScreen';
 import LocalCharityMapScreen from '../screens/LocalCharityMapScreen';
@@ -78,20 +77,6 @@ const CharitiesStack = () => {
         name="CharitiesList" 
         component={CharitiesScreen}
         options={{ headerShown: false }}
-      />
-      <Stack.Screen 
-        name="CharityDetail" 
-        component={CharityDetailScreen}
-        options={({ route }) => ({
-          title: route.params?.charity?.name || 'Charity Details',
-          headerStyle: {
-            backgroundColor: '#FFFFFF',
-          },
-          headerTintColor: '#1F2937',
-          headerTitleStyle: {
-            fontWeight: '600',
-          },
-        })}
       />
       <Stack.Screen
         name="CharityProfileView"
