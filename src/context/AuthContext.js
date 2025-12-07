@@ -568,6 +568,19 @@ export const AuthProvider = ({ children }) => {
             }
           }
           
+          // Check for location coordinates
+          const hasValidLat = typeof charity.location_lat === 'number' && charity.location_lat !== 0 && !isNaN(charity.location_lat);
+          const hasValidLon = typeof charity.location_lon === 'number' && charity.location_lon !== 0 && !isNaN(charity.location_lon);
+          
+          const latitude = hasValidLat ? charity.location_lat : 0;
+          const longitude = hasValidLon ? charity.location_lon : 0;
+          
+          if (hasValidLat && hasValidLon) {
+            console.log(`✅ Loaded location for ${charity.name}: ${latitude}, ${longitude}`);
+          } else {
+            console.log(`⚠️ No valid location for ${charity.name} (lat: ${charity.location_lat}, lon: ${charity.location_lon})`);
+          }
+          
           return {
             id: charity.id,
             name: charity.name,
@@ -577,9 +590,8 @@ export const AuthProvider = ({ children }) => {
             location: {
               city: city,
               country: charity.country,
-              // Use location_lat and location_lon from database, fallback to 0 if not available
-              latitude: typeof charity.location_lat === 'number' ? charity.location_lat : 0,
-              longitude: typeof charity.location_lon === 'number' ? charity.location_lon : 0
+              latitude: latitude,
+              longitude: longitude
             },
             founded: charity.founded_year,
             verified: charity.verified,
@@ -794,6 +806,16 @@ export const AuthProvider = ({ children }) => {
         
         // Prepare location data for saving to database
         const locationDataForDb = additionalData.location || null;
+        if (locationDataForDb) {
+          console.log('📍 Location data received for charity signup:', {
+            latitude: locationDataForDb.latitude,
+            longitude: locationDataForDb.longitude,
+            city: locationDataForDb.city,
+            address: locationDataForDb.address
+          });
+        } else {
+          console.log('⚠️ No location data provided for charity signup');
+        }
         
         const charityProfile = {
           email: email,
@@ -884,47 +906,80 @@ export const AuthProvider = ({ children }) => {
         // User entries are only created when needed (e.g., when charity tries to like/comment)
         // This avoids duplicate entries and keeps charity and user accounts separate
 
-        // Add to local charities list
-        // Use location data from database (charity.location_lat/location_lon) if available, otherwise from signup data
-        const locationDataForLocal = locationDataForDb || (charity.location_lat && charity.location_lon ? {
-          latitude: charity.location_lat,
-          longitude: charity.location_lon
-        } : null);
-        
-        let city = charity.country;
-        if (charity.address) {
-          const parts = charity.address.split(',');
-          if (parts.length > 0) {
-            city = parts[0].trim();
+        // If location data was provided, try to save it to database
+        if (locationDataForDb && typeof locationDataForDb.latitude === 'number' && typeof locationDataForDb.longitude === 'number') {
+          console.log(`📍 Attempting to save location for ${charity.name}: ${locationDataForDb.latitude}, ${locationDataForDb.longitude}`);
+          
+          // Try to update the charity with location data if columns exist
+          const { error: updateError } = await supabase
+            .from('charities')
+            .update({
+              location_lat: locationDataForDb.latitude,
+              location_lon: locationDataForDb.longitude
+            })
+            .eq('id', charity.id);
+          
+          if (updateError) {
+            if (updateError.code === 'PGRST204' || updateError.message?.includes('location_lat') || updateError.message?.includes('column') || updateError.message?.includes('schema cache')) {
+              console.log('⚠️ Location columns not found in database. Please run the migration to add location_lat and location_lon columns.');
+              console.log('⚠️ Storing location temporarily in local state (will be lost on app restart until migration is run).');
+              
+              // Store location in local state as fallback - merge with loaded charities
+              let city = charity.country;
+              if (charity.address) {
+                const parts = charity.address.split(',');
+                if (parts.length > 0) {
+                  city = parts[0].trim();
+                }
+              }
+              
+              const charityWithLocation = {
+                id: charity.id,
+                name: charity.name,
+                category: charity.category,
+                country: charity.country,
+                email: charity.email,
+                location: {
+                  city: locationDataForDb.city || city || charity.country,
+                  country: locationDataForDb.country || charity.country,
+                  latitude: locationDataForDb.latitude,
+                  longitude: locationDataForDb.longitude
+                },
+                founded: charity.founded_year,
+                verified: charity.verified,
+                logo: charity.logo_url,
+                coverImage: charity.cover_image_url,
+                mission: charity.mission,
+                website: charity.website,
+                phone: charity.phone,
+                address: charity.address,
+                totalRaised: charity.total_raised || 0,
+                followers: charity.followers || 0,
+                impact: charity.impact || {},
+                posts: []
+              };
+              
+              // Update local state with location
+              setCharitiesData(prev => {
+                const existing = prev.find(c => c.id === charity.id);
+                if (existing) {
+                  return prev.map(c => c.id === charity.id ? charityWithLocation : c);
+                }
+                return [...prev, charityWithLocation];
+              });
+              
+              console.log('✅ Added charity with location to local state (temporary until migration is run)');
+              return; // Don't reload from database since we just updated local state
+            } else {
+              console.log('⚠️ Could not update charity location:', updateError.message);
+            }
+          } else {
+            console.log('✅ Successfully saved location to database');
           }
         }
         
-        const newCharity = {
-          id: charity.id,
-          name: charity.name,
-          category: charity.category,
-          country: charity.country,
-          location: {
-            city: locationDataForLocal?.city || city || charity.country,
-            country: locationDataForLocal?.country || charity.country,
-            latitude: locationDataForLocal?.latitude || charity.location_lat || 0,
-            longitude: locationDataForLocal?.longitude || charity.location_lon || 0
-          },
-          founded: charity.founded_year,
-          verified: charity.verified,
-          logo: charity.logo_url,
-          coverImage: charity.cover_image_url,
-          mission: charity.mission,
-          website: charity.website,
-          phone: charity.phone,
-          address: charity.address,
-          totalRaised: charity.total_raised,
-          followers: charity.followers,
-          impact: charity.impact
-        };
-        
-        setCharitiesData(prev => [...prev, newCharity]);
-        console.log('✅ New charity added to local charities list');
+        // Reload charities from database to ensure we have the latest data
+        await loadCharitiesFromDatabase();
       } else {
         // Create user profile
         // Handle avatar URL - use provided avatarUrl or default

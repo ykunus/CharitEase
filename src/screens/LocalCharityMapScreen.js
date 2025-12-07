@@ -121,7 +121,10 @@ const LocalCharityMapScreen = ({ route, navigation }) => {
         const latitude = charity.location?.latitude;
         const longitude = charity.location?.longitude;
 
-        if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+        // Filter out invalid locations (not a number, or exactly 0,0 which is in the ocean)
+        if (typeof latitude !== 'number' || typeof longitude !== 'number' || 
+            (latitude === 0 && longitude === 0) || 
+            isNaN(latitude) || isNaN(longitude)) {
           return null;
         }
 
