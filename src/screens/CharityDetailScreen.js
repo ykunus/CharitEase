@@ -28,9 +28,14 @@ const CharityDetailScreen = ({ route }) => {
     followCharity(charity.id);
   };
 
-  const handleDonate = (amount, message) => {
-    makeDonation(charity.id, amount, message);
-    setDonationModalVisible(false);
+  const handleDonate = async (amount, message) => {
+    try {
+      await makeDonation(charity.id, amount, message);
+      setDonationModalVisible(false);
+    } catch (error) {
+      console.error('Donation failed:', error);
+      // Error is already handled in makeDonation
+    }
   };
 
   const renderImpactMetric = (label, value, icon, color) => (

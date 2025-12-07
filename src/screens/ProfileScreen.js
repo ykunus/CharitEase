@@ -257,12 +257,6 @@ const ProfileScreen = ({ navigation }) => {
                 'Following',
                 '#3B82F6'
               )}
-              {renderCompactStat(
-                'gift',
-                (user.totalDonations || 0).toString(),
-                'Donations',
-                '#22C55E'
-              )}
             </>
           )}
         </View>

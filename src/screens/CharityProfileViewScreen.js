@@ -22,7 +22,7 @@ import DonationModal from '../components/DonationModal';
 
 const CharityProfileViewScreen = ({ route, navigation }) => {
   const { charityId } = route.params || {};
-  const { posts, charitiesData, getCharityById, likePost, likedPosts, loadCharityProfileById, followedCharities, followCharity, user: currentUser } = useAuth();
+  const { posts, charitiesData, getCharityById, likePost, likedPosts, loadCharityProfileById, followedCharities, followCharity, makeDonation, user: currentUser } = useAuth();
   const [viewedCharity, setViewedCharity] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -42,13 +42,19 @@ const CharityProfileViewScreen = ({ route, navigation }) => {
     }
   };
   
-  const handleDonate = (amount, message) => {
-    // Close the donation modal
-    setDonationModalVisible(false);
-    // Reload charity data to update stats after donation
-    setTimeout(() => {
-      loadCharityData();
-    }, 1000);
+  const handleDonate = async (amount, message) => {
+    try {
+      await makeDonation(viewedCharity.id, amount, message);
+      // Close the donation modal
+      setDonationModalVisible(false);
+      // Reload charity data to update stats after donation
+      setTimeout(() => {
+        loadCharityData();
+      }, 500);
+    } catch (error) {
+      console.error('Donation failed:', error);
+      // Error is already handled in makeDonation
+    }
   };
 
   // Load charity profile by ID

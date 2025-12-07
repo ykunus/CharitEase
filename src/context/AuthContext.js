@@ -925,21 +925,98 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const makeDonation = (charityId, amount, message) => {
-    const newDonation = {
-      id: `donation${Date.now()}`,
-      charityId,
-      amount,
-      message,
-      date: new Date().toISOString().split('T')[0]
-    };
-    
-    setDonations(prev => [newDonation, ...prev]);
+  const makeDonation = async (charityId, amount, message) => {
+    try {
+      if (!user || !user.id) {
+        throw new Error('You must be logged in to make a donation');
+      }
+
+      console.log('🔄 Creating donation in database...');
+
+      // Create donation in database
+      const donationData = {
+        user_id: user.id,
+        charity_id: charityId,
+        amount: amount,
+        message: message || null,
+        status: 'completed'
+      };
+
+      const { data: newDonation, error: donationError } = await supabase
+        .from('donations')
+        .insert([donationData])
+        .select()
+        .single();
+
+      if (donationError) {
+        console.error('Donation creation error:', donationError);
+        throw new Error('Failed to create donation: ' + donationError.message);
+      }
+
+      console.log('✅ Donation created in database');
+
+      // Update user's total_donated in database
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ 
+          total_donated: (user.totalDonated || 0) + amount,
+          total_donations: (user.totalDonations || 0) + 1
+        })
+        .eq('id', user.id);
+
+      if (updateError) {
+        console.error('Error updating user total_donated:', updateError);
+        // Continue anyway - donation was created successfully
+      } else {
+        console.log('✅ User total_donated updated in database');
+      }
+
+      // Update charity's total_raised in database
+      // First get current total_raised
+      const { data: charityData, error: charityFetchError } = await supabase
+        .from('charities')
+        .select('total_raised')
+        .eq('id', charityId)
+        .single();
+
+      if (!charityFetchError && charityData) {
+        const currentTotal = parseFloat(charityData.total_raised || 0);
+        const { error: charityUpdateError } = await supabase
+          .from('charities')
+          .update({ 
+            total_raised: currentTotal + amount
+          })
+          .eq('id', charityId);
+
+        if (charityUpdateError) {
+          console.log('Note: Could not update charity total_raised:', charityUpdateError.message);
+        } else {
+          console.log('✅ Charity total_raised updated in database');
+        }
+      }
+
+      // Format donation for local state
+      const formattedDonation = {
+        id: newDonation.id,
+        charityId: newDonation.charity_id,
+        amount: newDonation.amount,
+        message: newDonation.message,
+        date: newDonation.created_at ? newDonation.created_at.split('T')[0] : new Date().toISOString().split('T')[0]
+      };
+      
+      // Update local state
+      setDonations(prev => [formattedDonation, ...prev]);
     setUser(prev => ({
       ...prev,
-      totalDonated: prev.totalDonated + amount,
-      totalDonations: prev.totalDonations + 1
-    }));
+        totalDonated: (prev.totalDonated || 0) + amount,
+        totalDonations: (prev.totalDonations || 0) + 1
+      }));
+
+      return formattedDonation;
+    } catch (error) {
+      console.error('Make donation error:', error);
+      throw error;
+    }
   };
 
   const createPost = async (title, content, imageUrl, type = 'update') => {
