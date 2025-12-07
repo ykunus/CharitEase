@@ -526,8 +526,15 @@ export const AuthProvider = ({ children }) => {
             usersWithPosts.forEach(user => {
               if (user.posts && Array.isArray(user.posts)) {
                 user.posts.forEach(postId => {
-                  if (userPostsIds.includes(postId)) {
-                    userPostsMap[postId] = {
+                  // Handle both UUID and string types for post ID matching
+                  const postIdStr = String(postId);
+                  // Find matching post ID by comparing as strings (handles UUID/string mismatches)
+                  const matchingPostId = userPostsIds.find(pId => {
+                    const pIdStr = String(pId);
+                    return pIdStr === postIdStr || pId === postId;
+                  });
+                  if (matchingPostId) {
+                    userPostsMap[matchingPostId] = {
                       userId: user.id,
                       userName: user.name,
                       userAvatar: user.avatar_url
@@ -560,7 +567,9 @@ export const AuthProvider = ({ children }) => {
         });
         
         setPosts(formattedPosts);
-        console.log(`✅ Loaded ${formattedPosts.length} posts from database`);
+        const userPostsCount = formattedPosts.filter(p => p.charityId === null).length;
+        const charityPostsCount = formattedPosts.filter(p => p.charityId !== null).length;
+        console.log(`✅ Loaded ${formattedPosts.length} posts from database (${userPostsCount} user posts, ${charityPostsCount} charity posts)`);
       } else {
         console.log('ℹ️ No posts found in database');
       }

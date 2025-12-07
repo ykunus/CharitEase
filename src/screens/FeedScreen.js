@@ -45,6 +45,7 @@ const FeedScreen = ({ navigation }) => {
   const [distance, setDistance] = useState(DEFAULT_DISTANCE_MILES);
   const [commentModalPost, setCommentModalPost] = useState(null);
   const [userPostAuthors, setUserPostAuthors] = useState({}); // Map of postId -> userInfo
+  const [charityPostsOnly, setCharityPostsOnly] = useState(false); // Toggle for charity-only filter
 
   const userLocation = user?.location || userProfile.location;
 
@@ -164,16 +165,33 @@ const FeedScreen = ({ navigation }) => {
   };
 
   const activePosts = useMemo(() => {
+    let posts;
     switch (selectedTab) {
       case 'global':
-        return sortedPosts;
+        posts = sortedPosts;
+        break;
       case 'local':
-        return localPosts;
+        posts = localPosts;
+        break;
       case 'following':
       default:
-        return followingPosts;
+        posts = followingPosts;
+        break;
     }
-  }, [selectedTab, sortedPosts, localPosts, followingPosts]);
+    
+    // Filter to show only charity posts if toggle is ON
+    if (charityPostsOnly) {
+      const charityOnly = posts.filter(post => post.charityId !== null);
+      console.log(`🔍 Toggle ON - Showing ${charityOnly.length} charity posts out of ${posts.length} total`);
+      return charityOnly;
+    }
+    
+    // Toggle OFF - show all posts (charity + user)
+    const userPostsCount = posts.filter(post => post.charityId === null).length;
+    const charityPostsCount = posts.filter(post => post.charityId !== null).length;
+    console.log(`🔍 Toggle OFF - Showing ${posts.length} total posts (${charityPostsCount} charity, ${userPostsCount} user)`);
+    return posts;
+  }, [selectedTab, sortedPosts, localPosts, followingPosts, charityPostsOnly]);
 
   const contentContainerStyle =
     activePosts.length === 0
@@ -218,7 +236,26 @@ const FeedScreen = ({ navigation }) => {
             verified: false,
             isUser: true
           };
+        } else {
+          // Not current user's post, but still a user post - use fallback
+          postAuthor = {
+            id: post.userId || 'unknown',
+            name: post.userName || 'User',
+            logo: post.userAvatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+            verified: false,
+            isUser: true
+          };
         }
+      } else {
+        // Fallback: Create a generic user post author so it still renders
+        // This handles cases where user info hasn't been attached yet
+        postAuthor = {
+          id: post.userId || 'unknown',
+          name: post.userName || 'User',
+          logo: post.userAvatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+          verified: false,
+          isUser: true
+        };
       }
     }
 
@@ -379,8 +416,26 @@ const FeedScreen = ({ navigation }) => {
     return (
       <View>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>{title}</Text>
-          <Text style={styles.headerSubtitle}>{subtitle}</Text>
+          <View style={styles.headerTop}>
+            <View style={styles.headerTextContainer}>
+              <Text style={styles.headerTitle}>{title}</Text>
+              <Text style={styles.headerSubtitle}>{subtitle}</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.filterToggle, charityPostsOnly && styles.filterToggleActive]}
+              onPress={() => setCharityPostsOnly(!charityPostsOnly)}
+              activeOpacity={0.7}
+            >
+              <Ionicons 
+                name={charityPostsOnly ? "business" : "business-outline"} 
+                size={20} 
+                color={charityPostsOnly ? '#FFFFFF' : '#22C55E'} 
+              />
+              <Text style={[styles.filterToggleText, charityPostsOnly && styles.filterToggleTextActive]}>
+                {charityPostsOnly ? 'Charities Only' : 'All Posts'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
         {renderTabBar()}
         {renderDistanceControls()}
@@ -439,6 +494,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  headerTextContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
@@ -448,6 +512,30 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 16,
     color: '#6B7280',
+  },
+  filterToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#22C55E',
+    marginTop: 4,
+  },
+  filterToggleActive: {
+    backgroundColor: '#22C55E',
+    borderColor: '#22C55E',
+  },
+  filterToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#22C55E',
+    marginLeft: 6,
+  },
+  filterToggleTextActive: {
+    color: '#FFFFFF',
   },
   tabBar: {
     flexDirection: 'row',
