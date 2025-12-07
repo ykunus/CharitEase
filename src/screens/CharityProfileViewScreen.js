@@ -18,15 +18,38 @@ import EmptyState from '../components/EmptyState';
 import PostCard from '../components/PostCard';
 import CommentModal from '../components/CommentModal';
 import LoadingSpinner from '../components/LoadingSpinner';
+import DonationModal from '../components/DonationModal';
 
 const CharityProfileViewScreen = ({ route, navigation }) => {
   const { charityId } = route.params || {};
-  const { posts, charitiesData, getCharityById, likePost, likedPosts, loadCharityProfileById } = useAuth();
+  const { posts, charitiesData, getCharityById, likePost, likedPosts, loadCharityProfileById, followedCharities, followCharity, user: currentUser } = useAuth();
   const [viewedCharity, setViewedCharity] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('posts');
   const [commentModalPost, setCommentModalPost] = useState(null);
+  const [donationModalVisible, setDonationModalVisible] = useState(false);
+  
+  const isFollowing = viewedCharity && followedCharities?.includes(viewedCharity.id);
+  
+  const handleFollow = () => {
+    if (viewedCharity?.id) {
+      followCharity(viewedCharity.id);
+      // Reload charity data to update follower count after following
+      setTimeout(() => {
+        loadCharityData();
+      }, 500);
+    }
+  };
+  
+  const handleDonate = (amount, message) => {
+    // Close the donation modal
+    setDonationModalVisible(false);
+    // Reload charity data to update stats after donation
+    setTimeout(() => {
+      loadCharityData();
+    }, 1000);
+  };
 
   // Load charity profile by ID
   useEffect(() => {
@@ -229,6 +252,38 @@ const CharityProfileViewScreen = ({ route, navigation }) => {
             year: 'numeric' 
           }) : 'Recently'}
         </Text>
+        
+        {/* Action Buttons - Follow and Donate for charities */}
+        {viewedCharity && currentUser && (
+          <View style={styles.actionButtonsContainer}>
+            <TouchableOpacity
+              style={[styles.actionButton, isFollowing && styles.actionButtonSecondary]}
+              onPress={handleFollow}
+            >
+              <Ionicons 
+                name={isFollowing ? 'checkmark' : 'add'} 
+                size={20} 
+                color={isFollowing ? '#22C55E' : '#FFFFFF'} 
+              />
+              <Text style={[styles.actionButtonText, isFollowing && styles.actionButtonTextSecondary]}>
+                {isFollowing ? 'Following' : 'Follow'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.actionButtonDonate]}
+              onPress={() => setDonationModalVisible(true)}
+            >
+              <Ionicons 
+                name="heart" 
+                size={20} 
+                color="#FFFFFF" 
+              />
+              <Text style={styles.actionButtonText}>
+                Donate
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* About Section */}
@@ -389,6 +444,16 @@ const CharityProfileViewScreen = ({ route, navigation }) => {
         post={commentModalPost}
         onClose={() => setCommentModalPost(null)}
       />
+      
+      {/* Donation Modal */}
+      {viewedCharity && (
+        <DonationModal
+          visible={donationModalVisible}
+          charity={viewedCharity}
+          onClose={() => setDonationModalVisible(false)}
+          onDonate={handleDonate}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -574,6 +639,39 @@ const styles = StyleSheet.create({
   },
   postsContainer: {
     paddingTop: 8,
+  },
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+    width: '100%',
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#22C55E',
+    borderRadius: 8,
+  },
+  actionButtonSecondary: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#22C55E',
+  },
+  actionButtonDonate: {
+    backgroundColor: '#EF4444',
+  },
+  actionButtonText: {
+    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  actionButtonTextSecondary: {
+    color: '#22C55E',
   },
 });
 

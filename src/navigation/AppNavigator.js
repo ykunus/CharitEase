@@ -93,6 +93,20 @@ const CharitiesStack = () => {
           },
         })}
       />
+      <Stack.Screen
+        name="CharityProfileView"
+        component={CharityProfileViewScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="UserProfileView"
+        component={UserProfileViewScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
     </Stack.Navigator>
   );
 };
@@ -110,6 +124,20 @@ const ProfileStack = () => {
         name="Settings" 
         component={SettingsScreen}
         options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="CharityProfileView"
+        component={CharityProfileViewScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="UserProfileView"
+        component={UserProfileViewScreen}
+        options={{
+          headerShown: false,
+        }}
       />
     </Stack.Navigator>
   );

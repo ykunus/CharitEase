@@ -96,10 +96,7 @@ const ProfileScreen = ({ navigation }) => {
   };
 
   const handleCharityPress = (charity) => {
-    navigation.navigate('Charities', {
-      screen: 'CharityDetail',
-      params: { charity }
-    });
+    navigation.navigate('CharityProfileView', { charityId: charity.id });
   };
 
   const handleSettingsPress = () => {

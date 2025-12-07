@@ -43,7 +43,7 @@ const CharitiesScreen = ({ navigation }) => {
   }, []);
 
   const handleCharityPress = (charity) => {
-    navigation.navigate('CharityDetail', { charity });
+    navigation.navigate('CharityProfileView', { charityId: charity.id });
   };
 
   const handleFollow = (charityId) => {

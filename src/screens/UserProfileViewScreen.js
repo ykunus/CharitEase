@@ -21,12 +21,29 @@ import LoadingSpinner from '../components/LoadingSpinner';
 
 const UserProfileViewScreen = ({ route, navigation }) => {
   const { userId } = route.params || {};
-  const { posts, charitiesData, getCharityById, likePost, likedPosts, loadUserProfileById } = useAuth();
+  const { posts, charitiesData, getCharityById, likePost, likedPosts, loadUserProfileById, user: currentUser, followedCharities, followCharity } = useAuth();
   const [viewedUser, setViewedUser] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('posts');
   const [commentModalPost, setCommentModalPost] = useState(null);
+  
+  // Check if current user is following this user
+  // Note: Currently users can only follow charities, but we'll add the button for consistency
+  const isFollowing = viewedUser?.userType === 'charity' && followedCharities?.includes(viewedUser?.id);
+  
+  const handleFollow = () => {
+    // If it's a charity, use followCharity function
+    if (viewedUser?.userType === 'charity' && viewedUser?.id) {
+      followCharity(viewedUser.id);
+      // Reload user data to update stats after following
+      setTimeout(() => {
+        loadUserData();
+      }, 500);
+    }
+    // TODO: Implement followUser functionality for regular users
+    // For now, regular users can't follow other users
+  };
 
   // Load user profile by ID
   useEffect(() => {
@@ -267,6 +284,23 @@ const UserProfileViewScreen = ({ route, navigation }) => {
             year: 'numeric' 
           }) : 'Recently'}
         </Text>
+        
+        {/* Action Button - Follow only for users */}
+        {viewedUser && currentUser && viewedUser.id !== currentUser.id && (
+          <TouchableOpacity
+            style={[styles.actionButton, styles.actionButtonPrimary]}
+            onPress={handleFollow}
+          >
+            <Ionicons 
+              name={isFollowing ? 'checkmark' : 'add'} 
+              size={20} 
+              color="#FFFFFF" 
+            />
+            <Text style={styles.actionButtonText}>
+              {isFollowing ? 'Following' : 'Follow'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* About Section */}
@@ -534,6 +568,34 @@ const styles = StyleSheet.create({
   },
   postsContainer: {
     paddingTop: 8,
+  },
+  actionButton: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: '#22C55E',
+    borderRadius: 8,
+    width: '100%',
+  },
+  actionButtonPrimary: {
+    backgroundColor: '#22C55E',
+  },
+  actionButtonSecondary: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#22C55E',
+  },
+  actionButtonText: {
+    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  actionButtonTextSecondary: {
+    color: '#22C55E',
   },
 });
 
