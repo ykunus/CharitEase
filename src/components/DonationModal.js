@@ -52,7 +52,7 @@ const DonationModal = ({ visible, charity, onClose, onDonate }) => {
     setAmount(presetAmount.toString());
   };
 
-  const API_URL = "http://172.20.50.39:3000"; // Replace with your backend URL
+  const API_URL = "http://172.20.241.124:3000"; // Backend server URL
 
   // Handle Apple Pay (simplified version)
   const handleApplePay = async () => {
