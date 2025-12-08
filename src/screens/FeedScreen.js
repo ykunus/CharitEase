@@ -103,21 +103,22 @@ const FeedScreen = ({ navigation }) => {
   const followingPosts = useMemo(() => {
     if (!sortedPosts.length || !user) return [];
     
-    // Get user's post IDs from their posts array
-    const userPostIds = [];
+    // Get user's post IDs from their posts array (now stores only IDs)
+    const userPostIds = new Set();
     if (user.posts && Array.isArray(user.posts)) {
       user.posts.forEach(p => {
-        const id = typeof p === 'object' && p.id ? p.id : (typeof p === 'string' ? p : null);
-        if (id) userPostIds.push(String(id));
+        const id = typeof p === 'object' && p.id ? String(p.id) : String(p);
+        if (id && id !== 'null' && id !== 'undefined') userPostIds.add(id);
       });
     }
     
     // Include posts from followed charities AND user's own posts
+    // Always filter from the global posts array (single source of truth)
     return sortedPosts.filter((post) => {
       const postIdStr = String(post.id);
       
-      // User's own posts - check if post ID is in user's posts array
-      const isUserPost = userPostIds.includes(postIdStr) || 
+      // User's own posts - check if post ID is in user's posts array or matches userId
+      const isUserPost = userPostIds.has(postIdStr) || 
                          (post.charityId === null && post.userId === user.id);
       
       // Posts from followed charities

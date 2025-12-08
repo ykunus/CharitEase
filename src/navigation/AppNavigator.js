@@ -17,6 +17,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import CreatePostScreen from '../screens/CreatePostScreen';
 import UserProfileViewScreen from '../screens/UserProfileViewScreen';
 import CharityProfileViewScreen from '../screens/CharityProfileViewScreen';
+import EditProfileScreen from '../screens/EditProfileScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -108,6 +109,11 @@ const ProfileStack = () => {
       <Stack.Screen 
         name="Settings" 
         component={SettingsScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen 
+        name="EditProfile" 
+        component={EditProfileScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen

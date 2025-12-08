@@ -40,7 +40,7 @@ const SettingsScreen = ({ navigation }) => {
   };
 
   const handleEditProfile = () => {
-    Alert.alert('Edit Profile', 'Profile editing feature coming soon!');
+    navigation.navigate('EditProfile');
   };
 
   const handleChangePassword = () => {

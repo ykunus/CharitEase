@@ -42,36 +42,34 @@ const ProfileScreen = ({ navigation }) => {
     }
   }, [isCharity, user?.email, charitiesData]);
 
-  // Get user's or charity's posts
+  // Get user's or charity's posts - ALWAYS filter from global posts array (single source of truth)
   const userPosts = useMemo(() => {
-    if (!user) return [];
+    if (!user || !posts) return [];
     
-    // Use user.posts array if available (most reliable)
-    if (user.posts && Array.isArray(user.posts) && user.posts.length > 0) {
-      // user.posts is already an array of post objects, just sort them
-      return [...user.posts].sort((a, b) => {
-        const dateA = new Date(a.timestamp || 0);
-        const dateB = new Date(b.timestamp || 0);
-        return dateB - dateA;
+    // Get post IDs from user.posts (now stores only IDs, not full objects)
+    const userPostIds = new Set();
+    if (user.posts && Array.isArray(user.posts)) {
+      user.posts.forEach(p => {
+        const id = typeof p === 'object' && p.id ? String(p.id) : String(p);
+        if (id && id !== 'null' && id !== 'undefined') userPostIds.add(id);
       });
     }
     
-    // Fallback: filter from global posts array
-    if (!posts) return [];
-    
+    // Always filter from global posts array (single source of truth)
     if (isCharity) {
       // Charity posts: match charity database ID
-      return posts.filter(post => post.charityId === charityDbId)
+      return posts
+        .filter(post => post.charityId === charityDbId)
         .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
     } else {
-      // User posts: check userId or charityId === null
-      const userPostIds = user.posts ? user.posts.map(p => typeof p === 'object' ? p.id : p) : [];
-      return posts.filter(post => {
-        const postIdStr = String(post.id);
-        return userPostIds.includes(postIdStr) || 
-               (post.charityId === null && post.userId === user.id) ||
-               (post.charityId === null && userPostIds.length === 0);
-      }).sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+      // User posts: check if post ID is in user's posts array or matches userId
+      return posts
+        .filter(post => {
+          const postIdStr = String(post.id);
+          return userPostIds.has(postIdStr) || 
+                 (post.charityId === null && post.userId === user.id);
+        })
+        .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
     }
   }, [posts, user, isCharity, charityDbId]);
 

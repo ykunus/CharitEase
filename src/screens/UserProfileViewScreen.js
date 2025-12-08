@@ -168,28 +168,27 @@ const UserProfileViewScreen = ({ route, navigation }) => {
     }
   };
 
-  // Get user's posts
+  // Get user's posts - ALWAYS filter from global posts array (single source of truth)
   const userPosts = useMemo(() => {
-    if (!viewedUser) return [];
+    if (!viewedUser || !posts) return [];
     
-    // Use user.posts array if available
-    if (viewedUser.posts && Array.isArray(viewedUser.posts) && viewedUser.posts.length > 0) {
-      return [...viewedUser.posts].sort((a, b) => {
-        const dateA = new Date(a.timestamp || 0);
-        const dateB = new Date(b.timestamp || 0);
-        return dateB - dateA;
+    // Get post IDs from viewedUser.posts (now stores only IDs, not full objects)
+    const userPostIds = new Set();
+    if (viewedUser.posts && Array.isArray(viewedUser.posts)) {
+      viewedUser.posts.forEach(p => {
+        const id = typeof p === 'object' && p.id ? String(p.id) : String(p);
+        if (id && id !== 'null' && id !== 'undefined') userPostIds.add(id);
       });
     }
     
-    // Fallback: filter from global posts array
-    if (!posts) return [];
-    
-    return posts.filter(post => {
-      const userPostIds = viewedUser.posts ? viewedUser.posts.map(p => typeof p === 'object' ? p.id : p) : [];
-      const postIdStr = String(post.id);
-      return userPostIds.includes(postIdStr) || 
-             (post.charityId === null && post.userId === viewedUser.id);
-    }).sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+    // Always filter from global posts array (single source of truth)
+    return posts
+      .filter(post => {
+        const postIdStr = String(post.id);
+        return userPostIds.has(postIdStr) || 
+               (post.charityId === null && post.userId === viewedUser.id);
+      })
+      .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
   }, [posts, viewedUser]);
 
   const onRefresh = useCallback(() => {

@@ -203,19 +203,35 @@ export const AuthProvider = ({ children }) => {
               });
             }
             
-            charityPosts = postsData.map(post => ({
-              id: post.id,
-              charityId: post.charity_id,
-              userId: post.user_id || null,
-              type: post.type,
-              title: post.title,
-              content: post.content,
-              image: post.image_url,
-              likes: likesCount[post.id] || 0, // Use actual count from likes table
-              comments: commentsCount[post.id] || 0, // Use actual count from comments table
-              shares: post.shares_count || 0,
-              timestamp: post.created_at
-            }));
+            // Format posts and add to global posts array (single source of truth)
+            const formattedCharityPosts = postsData.map(post => {
+              return {
+                id: post.id,
+                charityId: post.charity_id,
+                userId: post.user_id || null,
+                type: post.type,
+                title: post.title,
+                content: post.content,
+                image: post.image_url,
+                likes: likesCount[post.id] || 0, // Use actual count from likes table
+                comments: commentsCount[post.id] || 0, // Use actual count from comments table
+                shares: post.shares_count || 0,
+                timestamp: post.created_at
+              };
+            });
+            
+            // Add/update posts in global posts array (single source of truth)
+            setPosts(prev => {
+              const existingIds = new Set(prev.map(p => p.id));
+              const newPosts = formattedCharityPosts.filter(p => !existingIds.has(p.id));
+              const updatedPosts = prev.map(p => {
+                const updated = formattedCharityPosts.find(up => up.id === p.id);
+                return updated || p;
+              });
+              return [...newPosts, ...updatedPosts];
+            });
+            
+            charityPosts = formattedCharityPosts.map(p => p.id); // Store only IDs
           }
           
           setUser({
@@ -230,7 +246,7 @@ export const AuthProvider = ({ children }) => {
             totalDonated: 0, // Charities don't donate
             totalDonations: 0,
             followedCharities: charityFollowedList, // Load from users table
-            posts: charityPosts,
+            posts: charityPosts, // Now stores only post IDs, not full objects
             joinedDate: charityProfile.created_at || new Date().toISOString(),
             userType: 'charity',
             mission: charityProfile.mission || '',
@@ -618,7 +634,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const loadPostsFromDatabase = async () => {
+  const loadPostsFromDatabase = async (updatedUserInfo = null) => {
     try {
       console.log('🔄 Loading posts from database...');
       const { data: postsFromDB, error } = await supabase
@@ -736,16 +752,31 @@ export const AuthProvider = ({ children }) => {
         }
         
         // Now transform all posts
+        // Get current user info to prioritize for their own posts (most up-to-date)
+        // Use updatedUserInfo if provided (from profile update), otherwise use current user state
+        const currentUserState = updatedUserInfo || user;
+        
         const formattedPosts = postsFromDB.map(post => {
           // Get user info from map (if we found it via user_id lookup)
           const userPostInfo = userPostsMap[post.id];
+          
+          // Determine final user name and avatar
+          let finalUserName = userPostInfo?.userName || null;
+          let finalUserAvatar = userPostInfo?.userAvatar || null;
+          
+          // If this post belongs to the current logged-in user, use their current state info
+          // This is the most up-to-date (especially if they just updated their profile)
+          if (currentUserState && post.user_id && post.user_id === currentUserState.id) {
+            finalUserName = currentUserState.name || finalUserName;
+            finalUserAvatar = currentUserState.avatar || currentUserState.avatar_url || currentUserState.logo || finalUserAvatar;
+          }
           
           return {
             id: post.id,
             charityId: post.charity_id,
             userId: userPostInfo?.userId || post.user_id || null, // Use user_id from post directly or from map
-            userName: userPostInfo?.userName || null, // Store user name for display
-            userAvatar: userPostInfo?.userAvatar || null, // Store user avatar for display
+            userName: finalUserName || 'User', // Fallback to 'User' if no name found
+            userAvatar: finalUserAvatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face', // Default avatar
             type: post.type,
             title: post.title,
             content: post.content,
@@ -1399,33 +1430,21 @@ export const AuthProvider = ({ children }) => {
       // For charity posts, the charity_id is already set in the post
       // Posts are loaded by querying posts table with charity_id (no posts array column needed)
       
-      // Update local user state to include the new post for immediate display
-      if (user.userType === 'charity') {
-        setUser(prevUser => {
-          if (!prevUser) return prevUser;
-          const currentPosts = Array.isArray(prevUser.posts) ? prevUser.posts : [];
-          return {
-            ...prevUser,
-            posts: [formattedPost, ...currentPosts]
-          };
-        });
-      }
-
-      // Add to local posts state (prepend to show at top) - no need to reload
+      // Add to local posts state (prepend to show at top) - this is the SINGLE SOURCE OF TRUTH
       setPosts(prev => [formattedPost, ...prev]);
 
-      // Update user's local posts array so it appears in following feed immediately
-      // This is handled above for charities, and here for regular users
-      if (user.userType === 'user') {
-        setUser(prevUser => {
-          if (!prevUser) return prevUser;
-          const currentUserPosts = Array.isArray(prevUser.posts) ? prevUser.posts : [];
-          return {
-            ...prevUser,
-            posts: [formattedPost, ...currentUserPosts]
-          };
-        });
-      }
+      // Update user's posts array to only store post IDs (not full objects)
+      // This way we always reference the same post objects from the global posts array
+      setUser(prevUser => {
+        if (!prevUser) return prevUser;
+        const currentPostIds = Array.isArray(prevUser.posts) 
+          ? prevUser.posts.map(p => typeof p === 'object' ? p.id : p).filter(Boolean)
+          : [];
+        return {
+          ...prevUser,
+          posts: [formattedPost.id, ...currentPostIds] // Store only IDs, not full objects
+        };
+      });
 
       return formattedPost;
     } catch (error) {
@@ -2018,6 +2037,207 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const updateProfile = async (updateData) => {
+    try {
+      if (!user) {
+        throw new Error('No user logged in');
+      }
+
+      const isCharity = user.userType === 'charity';
+
+      if (isCharity) {
+        // Update charity profile
+        const updatePayload = {};
+
+        if (updateData.charityName) updatePayload.name = updateData.charityName;
+        if (updateData.mission) updatePayload.mission = updateData.mission;
+        if (updateData.website !== undefined) updatePayload.website = updateData.website;
+        if (updateData.phone !== undefined) updatePayload.phone = updateData.phone;
+        if (updateData.address !== undefined) updatePayload.address = updateData.address;
+        if (updateData.country) updatePayload.country = updateData.country;
+        if (updateData.category) updatePayload.category = updateData.category;
+        if (updateData.foundedYear) updatePayload.founded_year = updateData.foundedYear;
+
+        // Handle avatar/logo
+        if (updateData.avatarUrl && updateData.avatarUrl !== user.logo) {
+          updatePayload.logo_url = updateData.avatarUrl;
+        }
+
+        // Handle location data
+        if (updateData.location && typeof updateData.location.latitude === 'number' && typeof updateData.location.longitude === 'number') {
+          updatePayload.location_lat = updateData.location.latitude;
+          updatePayload.location_lon = updateData.location.longitude;
+        }
+
+        // Update charity in database
+        const { error: charityError } = await supabase
+          .from('charities')
+          .update(updatePayload)
+          .eq('email', user.email);
+
+        if (charityError) {
+          // If location columns don't exist, retry without them
+          if (charityError.code === 'PGRST204' || charityError.message?.includes('location_lat') || charityError.message?.includes('column')) {
+            const updateWithoutLocation = { ...updatePayload };
+            delete updateWithoutLocation.location_lat;
+            delete updateWithoutLocation.location_lon;
+            
+            const { error: retryError } = await supabase
+              .from('charities')
+              .update(updateWithoutLocation)
+              .eq('email', user.email);
+            
+            if (retryError) {
+              throw new Error('Failed to update charity profile: ' + retryError.message);
+            }
+            console.log('⚠️ Location columns not found, updated charity without location');
+          } else {
+            throw new Error('Failed to update charity profile: ' + charityError.message);
+          }
+        }
+
+        console.log('✅ Charity profile updated in database');
+
+        // Also update corresponding user entry (if exists) for charity accounts
+        // This ensures comments and likes reflect the updated name/logo
+        if (user.dbId || user.id) {
+          const userUpdatePayload = {};
+          if (updateData.charityName) userUpdatePayload.name = updateData.charityName;
+          if (updateData.avatarUrl && updateData.avatarUrl !== user.logo) {
+            userUpdatePayload.avatar_url = updateData.avatarUrl;
+          }
+          if (updateData.country) userUpdatePayload.country = updateData.country;
+
+          if (Object.keys(userUpdatePayload).length > 0) {
+            const userIdToUpdate = user.dbId || user.id;
+            const { error: userUpdateError } = await supabase
+              .from('users')
+              .update(userUpdatePayload)
+              .eq('id', userIdToUpdate)
+              .eq('user_type', 'charity');
+
+            if (!userUpdateError) {
+              console.log('✅ Updated charity user entry for comments/likes');
+            }
+          }
+        }
+
+        // Reload charity data
+        await loadCharitiesFromDatabase();
+        const { data: { user: supabaseUser } } = await supabase.auth.getUser();
+        if (supabaseUser) {
+          await loadUserProfile(supabaseUser);
+        }
+      } else {
+        // Update user profile
+        const updatePayload = {};
+
+        if (updateData.name) updatePayload.name = updateData.name;
+        if (updateData.country) updatePayload.country = updateData.country;
+        if (updateData.bio !== undefined) updatePayload.bio = updateData.bio;
+
+        // Handle avatar
+        if (updateData.avatarUrl && updateData.avatarUrl !== user.avatar) {
+          updatePayload.avatar_url = updateData.avatarUrl;
+        }
+
+        // Update user in database
+        const { error: userError } = await supabase
+          .from('users')
+          .update(updatePayload)
+          .eq('id', user.id);
+
+        if (userError) {
+          throw new Error('Failed to update user profile: ' + userError.message);
+        }
+
+        console.log('✅ User profile updated in database');
+      }
+
+      // Calculate what values will be updated (for immediate local state updates)
+      const updatedName = isCharity 
+        ? (updateData.charityName !== undefined ? updateData.charityName : user.name)
+        : (updateData.name !== undefined ? updateData.name : user.name);
+      const updatedAvatar = updateData.avatarUrl || (isCharity ? user.logo : user.avatar);
+      const userIdToMatch = isCharity ? (user.dbId || user.id) : user.id;
+      const charityIdToMatch = isCharity ? user.charityId : null;
+
+      // Update local state for comments and posts BEFORE reloading
+      // This ensures UI updates instantly without waiting for database reloads
+      const hasNameChange = isCharity 
+        ? (updateData.charityName !== undefined && updateData.charityName !== user.name)
+        : (updateData.name !== undefined && updateData.name !== user.name);
+      const hasAvatarChange = updateData.avatarUrl && updateData.avatarUrl !== (isCharity ? user.logo : user.avatar);
+
+      if (hasNameChange || hasAvatarChange) {
+        // Update all comments by this user in local state
+        setComments(prev => {
+          const updated = { ...prev };
+          
+          Object.keys(updated).forEach(postId => {
+            updated[postId] = updated[postId].map(comment => {
+              if (comment.userId === userIdToMatch) {
+                return {
+                  ...comment,
+                  userName: hasNameChange ? updatedName : comment.userName,
+                  userAvatar: hasAvatarChange ? updatedAvatar : comment.userAvatar
+                };
+              }
+              return comment;
+            });
+          });
+          
+          return updated;
+        });
+        console.log('✅ Updated all comments in local state');
+
+        // Update all posts by this user/charity in local state
+        setPosts(prev => prev.map(post => {
+          // For user posts
+          if (post.userId === userIdToMatch) {
+            return {
+              ...post,
+              userName: hasNameChange ? updatedName : post.userName,
+              userAvatar: hasAvatarChange ? updatedAvatar : post.userAvatar
+            };
+          }
+          return post;
+        }));
+        console.log('✅ Updated all posts in local state');
+
+        // Note: user.posts may contain either IDs or full objects depending on how they were loaded
+        // The global posts array is already updated above, which is the single source of truth
+        // When posts are displayed, they should always filter from the global posts array
+        console.log('✅ Posts updated in global posts array (single source of truth)');
+      }
+
+      // Prepare updated user info to pass to loadPostsFromDatabase
+      // This ensures posts get the updated name/avatar immediately
+      const updatedUserInfoForPosts = {
+        ...user,
+        name: isCharity ? (updateData.charityName !== undefined ? updateData.charityName : user.name) : (updateData.name !== undefined ? updateData.name : user.name),
+        avatar: updateData.avatarUrl || (isCharity ? user.logo : user.avatar),
+        logo: isCharity ? (updateData.avatarUrl || user.logo) : user.logo,
+        id: userIdToMatch
+      };
+
+      // Reload user profile to get updated data from database
+      const { data: { user: supabaseUser } } = await supabase.auth.getUser();
+      if (supabaseUser) {
+        await loadUserProfile(supabaseUser);
+      }
+
+      // Reload posts from database, passing updated user info
+      // This ensures posts use the latest name/avatar instead of querying stale data
+      await loadPostsFromDatabase(updatedUserInfoForPosts);
+
+      console.log('✅ Reloaded posts from database with updated user info');
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      throw error;
+    }
+  };
+
   const value = {
     user,
     isAuthenticated,
@@ -2045,7 +2265,8 @@ export const AuthProvider = ({ children }) => {
     loadUserProfileById,
     loadCharityProfileById,
     findUserIdForPost,
-    testSupabaseConnection
+    testSupabaseConnection,
+    updateProfile
   };
 
   return (
