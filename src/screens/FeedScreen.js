@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { userProfile } from '../data/demoData';
 import PostCard from '../components/PostCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
@@ -48,7 +47,7 @@ const FeedScreen = ({ navigation }) => {
   const [userPostAuthors, setUserPostAuthors] = useState({}); // Map of postId -> userInfo
   const [charityPostsOnly, setCharityPostsOnly] = useState(false); // Toggle for charity-only filter
 
-  const userLocation = user?.location || userProfile.location;
+  const userLocation = user?.location || null;
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

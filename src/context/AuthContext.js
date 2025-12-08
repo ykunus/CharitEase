@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { userProfile, charities, socialPosts, donationHistory } from '../data/demoData';
+import { charities, socialPosts, donationHistory } from '../data/demoData';
 import { supabase } from '../config/supabase';
 
 const AuthContext = createContext();
@@ -46,37 +46,10 @@ export const AuthProvider = ({ children }) => {
         await loadUserProfile(session.user);
         setIsConnected(true);
       } else {
-        // Fallback to AsyncStorage for demo user
-        console.log('⚠️ No Supabase session, checking local storage...');
-      const demoUser = await AsyncStorage.getItem('demoUser');
-      if (demoUser) {
-        const parsed = JSON.parse(demoUser);
-        const fallbackFollowed = Array.isArray(parsed.followedCharities) ? parsed.followedCharities : [];
-
-        setUser({
-          ...parsed,
-          followedCharities: fallbackFollowed
-        });
-        setFollowedCharities(fallbackFollowed);
-        setIsAuthenticated(true);
-          setIsConnected(false);
-        
-        console.log('✅ Demo user loaded from storage');
-      } else {
-          console.log('ℹ️ No user found');
-        }
+        console.log('ℹ️ No active session found');
       }
     } catch (error) {
       console.log('Auth check error:', error);
-      // Try fallback to demo user
-      const demoUser = await AsyncStorage.getItem('demoUser');
-      if (demoUser) {
-        const parsed = JSON.parse(demoUser);
-        setUser(parsed);
-        setFollowedCharities(parsed.followedCharities || []);
-        setIsAuthenticated(true);
-        setIsConnected(false);
-      }
     } finally {
       setIsLoading(false);
     }
@@ -1100,7 +1073,6 @@ export const AuthProvider = ({ children }) => {
       await supabase.auth.signOut();
       
       // Clear AsyncStorage
-      await AsyncStorage.removeItem('demoUser');
       
       // Reset state
       setUser(null);
