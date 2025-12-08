@@ -18,15 +18,18 @@ import ConfirmationModal from '../components/ConfirmationModal';
 import EmptyState from '../components/EmptyState';
 import PostCard from '../components/PostCard';
 import CommentModal from '../components/CommentModal';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 const ProfileScreen = ({ navigation }) => {
-  const { user, donations, posts, charitiesData, getCharityById, getFollowedCharitiesData, likePost, likedPosts } = useAuth();
+  const { user, donations, posts, charitiesData, getCharityById, getFollowedCharitiesData, likePost, likedPosts, loadCharityDonations } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('posts'); // 'posts' or 'donations' or 'following'
   const [charityDbId, setCharityDbId] = useState(null);
   const [commentModalPost, setCommentModalPost] = useState(null);
+  const [charityDonations, setCharityDonations] = useState([]); // Donations received by charity
+  const [loadingDonations, setLoadingDonations] = useState(false);
 
   const isCharity = user?.userType === 'charity';
   const followedCharities = getFollowedCharitiesData();
@@ -42,6 +45,27 @@ const ProfileScreen = ({ navigation }) => {
     }
   }, [isCharity, user?.email, charitiesData]);
 
+  // Load donations received by charity
+  useEffect(() => {
+    const loadDonations = async () => {
+      if (isCharity && charityDbId) {
+        setLoadingDonations(true);
+        try {
+          const receivedDonations = await loadCharityDonations(charityDbId);
+          setCharityDonations(receivedDonations);
+        } catch (error) {
+          console.error('Error loading charity donations:', error);
+        } finally {
+          setLoadingDonations(false);
+        }
+      }
+    };
+
+    if (activeTab === 'donations' && isCharity) {
+      loadDonations();
+    }
+  }, [activeTab, isCharity, charityDbId, loadCharityDonations]);
+
   // Get user's or charity's posts - ALWAYS filter from global posts array (single source of truth)
   const userPosts = useMemo(() => {
     if (!user || !posts) return [];
@@ -56,7 +80,7 @@ const ProfileScreen = ({ navigation }) => {
     }
     
     // Always filter from global posts array (single source of truth)
-    if (isCharity) {
+      if (isCharity) {
       // Charity posts: match charity database ID
       return posts
         .filter(post => post.charityId === charityDbId)
@@ -73,12 +97,22 @@ const ProfileScreen = ({ navigation }) => {
     }
   }, [posts, user, isCharity, charityDbId]);
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 1500);
-  }, []);
+    try {
+      // Reload donations if viewing donations tab
+      if (activeTab === 'donations' && isCharity && charityDbId) {
+        const receivedDonations = await loadCharityDonations(charityDbId);
+        setCharityDonations(receivedDonations);
+      }
+    } catch (error) {
+      console.error('Error refreshing donations:', error);
+    } finally {
+      setTimeout(() => {
+        setRefreshing(false);
+      }, 500);
+    }
+  }, [activeTab, isCharity, charityDbId, loadCharityDonations]);
 
   const handleLike = (postId) => {
     likePost(postId);
@@ -178,6 +212,24 @@ const ProfileScreen = ({ navigation }) => {
   );
 
   const renderDonation = ({ item: donation }) => {
+    // For charity accounts viewing donations received: show donor info
+    if (isCharity && donation.donor) {
+      return (
+        <View style={styles.donationItem}>
+          <Image source={{ uri: donation.donor.avatar }} style={styles.donationLogo} />
+          <View style={styles.donationInfo}>
+            <Text style={styles.donationDonorName}>{donation.donor.name}</Text>
+            <Text style={styles.donationAmount}>{formatCurrency(donation.amount)}</Text>
+            <Text style={styles.donationDate}>{formatDate(donation.date)}</Text>
+            {donation.message && (
+              <Text style={styles.donationMessage}>{donation.message}</Text>
+            )}
+          </View>
+        </View>
+      );
+    }
+
+    // For user accounts viewing donations made: show charity info
     const charity = getCharityById(donation.charityId);
     if (!charity) return null;
 
@@ -327,7 +379,13 @@ const ProfileScreen = ({ navigation }) => {
       {/* Tabs */}
       <View style={styles.tabsContainer}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'posts' && styles.tabActive]}
+          style={[
+            styles.tab, 
+            activeTab === 'posts' && [
+              styles.tabActive,
+              { borderBottomColor: isCharity ? '#22C55E' : '#3B82F6' }
+            ]
+          ]}
           onPress={() => setActiveTab('posts')}
         >
           <Ionicons 
@@ -335,39 +393,68 @@ const ProfileScreen = ({ navigation }) => {
             size={20} 
             color={activeTab === 'posts' ? (isCharity ? '#22C55E' : '#3B82F6') : '#6B7280'} 
           />
-          <Text style={[styles.tabText, activeTab === 'posts' && styles.tabTextActive]}>
+          <Text style={[
+            styles.tabText, 
+            activeTab === 'posts' && [
+              styles.tabTextActive,
+              { color: isCharity ? '#22C55E' : '#3B82F6' }
+            ]
+          ]}>
             Posts
           </Text>
         </TouchableOpacity>
+        {/* Donations tab - for both charities (donations received) and users (donations made) */}
+        <TouchableOpacity
+          style={[
+            styles.tab, 
+            activeTab === 'donations' && [
+              styles.tabActive,
+              { borderBottomColor: isCharity ? '#22C55E' : '#3B82F6' }
+            ]
+          ]}
+          onPress={() => setActiveTab('donations')}
+        >
+          <Ionicons 
+            name="heart-outline" 
+            size={20} 
+            color={activeTab === 'donations' ? (isCharity ? '#22C55E' : '#3B82F6') : '#6B7280'} 
+          />
+          <Text style={[
+            styles.tabText, 
+            activeTab === 'donations' && [
+              styles.tabTextActive,
+              { color: isCharity ? '#22C55E' : '#3B82F6' }
+            ]
+          ]}>
+            Donations
+          </Text>
+        </TouchableOpacity>
         {!isCharity && (
-          <>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'donations' && styles.tabActive]}
-              onPress={() => setActiveTab('donations')}
-            >
-              <Ionicons 
-                name="heart-outline" 
-                size={20} 
-                color={activeTab === 'donations' ? '#3B82F6' : '#6B7280'} 
-              />
-              <Text style={[styles.tabText, activeTab === 'donations' && styles.tabTextActive]}>
-                Donations
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === 'following' && styles.tabActive]}
-              onPress={() => setActiveTab('following')}
-            >
-              <Ionicons 
-                name="people-outline" 
-                size={20} 
-                color={activeTab === 'following' ? '#3B82F6' : '#6B7280'} 
-              />
-              <Text style={[styles.tabText, activeTab === 'following' && styles.tabTextActive]}>
-                Following
-              </Text>
-            </TouchableOpacity>
-          </>
+          <TouchableOpacity
+            style={[
+              styles.tab, 
+              activeTab === 'following' && [
+                styles.tabActive,
+                { borderBottomColor: '#3B82F6' }
+              ]
+            ]}
+            onPress={() => setActiveTab('following')}
+          >
+            <Ionicons 
+              name="people-outline" 
+              size={20} 
+              color={activeTab === 'following' ? '#3B82F6' : '#6B7280'} 
+            />
+            <Text style={[
+              styles.tabText, 
+              activeTab === 'following' && [
+                styles.tabTextActive,
+                { color: '#3B82F6' }
+              ]
+            ]}>
+              Following
+            </Text>
+          </TouchableOpacity>
         )}
       </View>
     </View>
@@ -432,6 +519,35 @@ const ProfileScreen = ({ navigation }) => {
     }
 
     if (activeTab === 'donations') {
+      // For charity accounts: show donations received
+      if (isCharity) {
+        if (loadingDonations) {
+          return (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>Loading donations...</Text>
+            </View>
+          );
+        }
+        if (charityDonations.length === 0) {
+          return (
+            <EmptyState
+              icon="heart-outline"
+              title="No donations yet"
+              message="Donations you receive will appear here!"
+            />
+          );
+        }
+        return (
+          <FlatList
+            data={charityDonations}
+            renderItem={renderDonation}
+            keyExtractor={(item) => item.id}
+            scrollEnabled={false}
+          />
+        );
+      }
+
+      // For user accounts: show donations made
       if (donations.length === 0) {
         return (
           <EmptyState
@@ -684,7 +800,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabActive: {
-    borderBottomColor: '#3B82F6',
+    // Color will be set dynamically in component
   },
   tabText: {
     fontSize: 15,
@@ -749,6 +865,12 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     marginBottom: 4,
   },
+  donationDonorName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
   donationAmount: {
     fontSize: 18,
     fontWeight: '700',
@@ -764,6 +886,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#374151',
     fontStyle: 'italic',
+    marginTop: 4,
+  },
+  loadingContainer: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#6B7280',
   },
 });
 

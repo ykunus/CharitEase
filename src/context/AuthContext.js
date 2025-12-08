@@ -1968,6 +1968,61 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const loadCharityDonations = async (charityId) => {
+    try {
+      console.log('🔄 Loading donations for charity:', charityId);
+      
+      // Load donations where charity_id matches
+      const { data: donationsData, error } = await supabase
+        .from('donations')
+        .select(`
+          *,
+          users (
+            id,
+            name,
+            avatar_url,
+            email
+          )
+        `)
+        .eq('charity_id', charityId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error loading charity donations:', error);
+        throw error;
+      }
+
+      if (donationsData && donationsData.length > 0) {
+        // Format donations with donor info
+        const formattedDonations = donationsData.map(donation => ({
+          id: donation.id,
+          amount: donation.amount,
+          message: donation.message,
+          date: donation.created_at ? donation.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+          createdAt: donation.created_at,
+          donor: donation.users ? {
+            id: donation.users.id,
+            name: donation.users.name || 'Anonymous',
+            avatar: donation.users.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+            email: donation.users.email
+          } : {
+            id: donation.user_id,
+            name: 'Unknown Donor',
+            avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face'
+          }
+        }));
+
+        console.log(`✅ Loaded ${formattedDonations.length} donations for charity`);
+        return formattedDonations;
+      }
+
+      return [];
+    } catch (error) {
+      console.error('Error loading charity donations:', error);
+      return [];
+    }
+  };
+
   const loadCharityProfileById = async (charityId) => {
     try {
       const { data: charityProfile, error } = await supabase
@@ -2261,6 +2316,7 @@ export const AuthProvider = ({ children }) => {
     getFollowedCharitiesPosts,
     loadUserProfileById,
     loadCharityProfileById,
+    loadCharityDonations,
     findUserIdForPost,
     testSupabaseConnection,
     updateProfile
