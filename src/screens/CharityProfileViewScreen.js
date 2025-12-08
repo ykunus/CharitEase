@@ -8,7 +8,8 @@ import {
   SafeAreaView,
   RefreshControl,
   Image,
-  ScrollView
+  ScrollView,
+  Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -44,16 +45,25 @@ const CharityProfileViewScreen = ({ route, navigation }) => {
   
   const handleDonate = async (amount, message) => {
     try {
+      console.log('💾 Saving donation to database...', { charityId: viewedCharity.id, amount, message });
       await makeDonation(viewedCharity.id, amount, message);
+      console.log('✅ Donation saved successfully');
+      
       // Close the donation modal
       setDonationModalVisible(false);
+      
       // Reload charity data to update stats after donation
       setTimeout(() => {
         loadCharityData();
       }, 500);
     } catch (error) {
-      console.error('Donation failed:', error);
-      // Error is already handled in makeDonation
+      console.error('❌ Donation save failed:', error);
+      Alert.alert(
+        'Donation Error',
+        `Failed to save donation: ${error.message}. The payment may have been processed, but the donation record could not be saved. Please contact support if this issue persists.`,
+        [{ text: 'OK' }]
+      );
+      // Don't close modal on error so user can try again
     }
   };
 

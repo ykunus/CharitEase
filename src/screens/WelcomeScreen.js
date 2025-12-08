@@ -59,10 +59,10 @@ const WelcomeScreen = ({ navigation }) => {
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
+          {/* <Text style={styles.footerText}>
             New to CharitEase?{' '}
             <Text style={styles.footerLink}>Create an account</Text>
-          </Text>
+          </Text> */}
         </View>
       </View>
     </SafeAreaView>

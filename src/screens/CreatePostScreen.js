@@ -15,6 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
+import { useFocusEffect } from '@react-navigation/native';
 
 const CreatePostScreen = ({ navigation }) => {
   const { user, createPost } = useAuth();
@@ -22,6 +23,17 @@ const CreatePostScreen = ({ navigation }) => {
   const [postTitle, setPostTitle] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
   const [posting, setPosting] = useState(false);
+
+  // Reset posting state when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      setPosting(false);
+      return () => {
+        // Cleanup when screen loses focus
+        setPosting(false);
+      };
+    }, [])
+  );
 
   const pickImage = async () => {
     try {
@@ -65,11 +77,16 @@ const CreatePostScreen = ({ navigation }) => {
       setPostContent('');
       setPostTitle('');
       setSelectedImage(null);
+      setPosting(false); // Reset posting state before navigation
       
       // Navigate back (posts will auto-refresh via context)
       navigation.goBack();
     } catch (error) {
+      console.error('Error creating post:', error);
       Alert.alert('Error', error.message || 'Failed to create post. Please try again.');
+      setPosting(false);
+    } finally {
+      // Always reset posting state, even if navigation fails
       setPosting(false);
     }
   };

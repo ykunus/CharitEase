@@ -165,13 +165,31 @@ const DonationModal = ({ visible, charity, onClose, onDonate }) => {
         if (paymentError.code !== "Canceled") {
           Alert.alert("Payment Failed", paymentError.message);
         }
-      } else {
+        setIsProcessing(false);
+        return;
+      }
+
+      // Payment successful - now save donation to database
+      console.log('💳 Payment successful, saving donation to database...');
+      try {
+        // Call onDonate which will save to database via makeDonation
+        await onDonate(parseFloat(amount), message || `Donation to ${charity.name}`);
+        console.log('✅ Donation saved to database');
+        
         Alert.alert(
           "Success!", 
           `Your donation of ${formatCurrency(parseFloat(amount))} to ${charity.name} was successful! Thank you for your generosity.`,
           [{ text: "OK" }]
         );
-        onDonate(parseFloat(amount), message || `Donation to ${charity.name}`);
+        handleClose();
+      } catch (donationError) {
+        console.error('❌ Failed to save donation after payment:', donationError);
+        Alert.alert(
+          "Payment Successful, But...",
+          `Your payment was processed, but we encountered an issue saving your donation record. Please contact support with this information. Error: ${donationError.message}`,
+          [{ text: "OK" }]
+        );
+        // Still close modal since payment succeeded
         handleClose();
       }
     } catch (error) {

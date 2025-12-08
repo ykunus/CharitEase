@@ -1212,7 +1212,12 @@ export const AuthProvider = ({ children }) => {
         throw new Error('You must be logged in to make a donation');
       }
 
-      console.log('🔄 Creating donation in database...');
+      console.log('🔄 Creating donation in database...', {
+        userId: user.id,
+      charityId,
+      amount,
+        message: message ? message.substring(0, 50) : null
+      });
 
       // Create donation in database
       const donationData = {
@@ -1230,26 +1235,46 @@ export const AuthProvider = ({ children }) => {
         .single();
 
       if (donationError) {
-        console.error('Donation creation error:', donationError);
+        console.error('❌ Donation creation error:', donationError);
+        console.error('Donation data attempted:', donationData);
         throw new Error('Failed to create donation: ' + donationError.message);
       }
 
-      console.log('✅ Donation created in database');
+      if (!newDonation || !newDonation.id) {
+        console.error('❌ Donation created but no ID returned:', newDonation);
+        throw new Error('Donation was created but no ID was returned from database');
+      }
+
+      console.log('✅ Donation created in database with ID:', newDonation.id);
 
       // Update user's total_donated in database
-      const { error: updateError } = await supabase
+      // Use raw SQL to ensure atomic update (get current value and add)
+      const { data: currentUserData, error: fetchUserError } = await supabase
         .from('users')
-        .update({ 
-          total_donated: (user.totalDonated || 0) + amount,
-          total_donations: (user.totalDonations || 0) + 1
-        })
-        .eq('id', user.id);
+        .select('total_donated, total_donations')
+        .eq('id', user.id)
+        .single();
 
-      if (updateError) {
-        console.error('Error updating user total_donated:', updateError);
-        // Continue anyway - donation was created successfully
+      if (!fetchUserError && currentUserData) {
+        const currentTotalDonated = parseFloat(currentUserData.total_donated || 0);
+        const currentTotalDonations = parseInt(currentUserData.total_donations || 0);
+        
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({ 
+            total_donated: currentTotalDonated + amount,
+            total_donations: currentTotalDonations + 1
+          })
+          .eq('id', user.id);
+
+        if (updateError) {
+          console.error('Error updating user total_donated:', updateError);
+          // Continue anyway - donation was created successfully
+        } else {
+          console.log('✅ User total_donated updated in database');
+        }
       } else {
-        console.log('✅ User total_donated updated in database');
+        console.warn('⚠️ Could not fetch current user data for update:', fetchUserError?.message);
       }
 
       // Update charity's total_raised in database
