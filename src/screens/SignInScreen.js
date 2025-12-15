@@ -32,6 +32,7 @@ const SignInScreen = ({ navigation, route }) => {
   const [profileImage, setProfileImage] = useState(null);
   const [locationData, setLocationData] = useState(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [geocodingAddress, setGeocodingAddress] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -59,6 +60,7 @@ const SignInScreen = ({ navigation, route }) => {
   const websiteInputRef = useRef(null);
   const phoneInputRef = useRef(null);
   const addressInputRef = useRef(null);
+  const locationInputRef = useRef(null);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -72,8 +74,55 @@ const SignInScreen = ({ navigation, route }) => {
 
     if (isSignUp) {
       if (isCharity) {
-        if (!formData.charityName || !formData.country || !formData.mission) {
+        if (!formData.charityName || !formData.mission) {
           Alert.alert('Error', 'Please fill in all required fields for charity registration');
+          return false;
+        }
+        
+        // Validate location/address for charities
+        const addressToValidate = locationData?.address || formData.address;
+        if (!addressToValidate || addressToValidate.trim().length === 0) {
+          Alert.alert(
+            'Location Required',
+            'Please enter your charity\'s address and tap "Find Location" to verify it.\n\nExample: Newton, Massachusetts, United States'
+          );
+          locationInputRef.current?.focus();
+          return false;
+        }
+        
+        // Check if address has been geocoded (has coordinates)
+        if (!locationData || !locationData.latitude || !locationData.longitude) {
+          Alert.alert(
+            'Location Not Verified',
+            'Please tap "Find Location" to verify your address and get coordinates. This is required for location-based features.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Verify Now', onPress: async () => {
+                const result = await geocodeAddress(addressToValidate);
+                if (!result) {
+                  // Geocoding failed, but allow submission if user wants
+                  Alert.alert(
+                    'Continue Anyway?',
+                    'We couldn\'t verify your address. You can continue, but location-based features may not work. Would you like to try a different address?',
+                    [
+                      { text: 'Try Different Address', onPress: () => locationInputRef.current?.focus() },
+                      { text: 'Continue Anyway', style: 'destructive', onPress: () => {
+                        // Allow submission without coordinates
+                        setFormData(prev => ({ ...prev }));
+                      }}
+                    ]
+                  );
+                }
+              }}
+            ]
+          );
+          return false;
+        }
+        
+        const addressValidation = validateAddress(addressToValidate);
+        if (!addressValidation.valid) {
+          Alert.alert('Invalid Address', addressValidation.message);
+          locationInputRef.current?.focus();
           return false;
         }
       } else {
@@ -122,8 +171,18 @@ const SignInScreen = ({ navigation, route }) => {
           signUpData.category = formData.category;
           
           // Add location data if available
+          // If locationData exists, use it; otherwise create locationData from formData.address if available
           if (locationData) {
-            signUpData.location = locationData;
+            signUpData.location = {
+              ...locationData,
+              address: locationData.address || formData.address
+            };
+          } else if (formData.address) {
+            // If user entered address manually but didn't use location button,
+            // create locationData with just the address (no coordinates)
+            signUpData.location = {
+              address: formData.address
+            };
           }
         }
 
@@ -202,7 +261,15 @@ const SignInScreen = ({ navigation, route }) => {
           'We need access to your location to set your charity\'s location. You can also enter it manually.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Enter Manually', onPress: () => setShowLocationPicker(true) }
+            { text: 'Enter Manually', onPress: () => {
+              Alert.alert(
+                'Enter Address',
+                'Please enter a complete address in the format:\n\nCity, Region/State, Country\n\nExample: Damascus, Damascus Governorate, Syria',
+                [
+                  { text: 'OK', onPress: () => locationInputRef.current?.focus() }
+                ]
+              );
+            }}
           ]
         );
         return;
@@ -223,6 +290,7 @@ const SignInScreen = ({ navigation, route }) => {
         const address = geocode[0];
         const locationString = `${address.city || ''}${address.region ? ', ' + address.region : ''}${address.country ? ', ' + address.country : ''}`.trim();
         
+        if (locationString && address.city && address.country) {
         setLocationData({
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
@@ -237,17 +305,269 @@ const SignInScreen = ({ navigation, route }) => {
           country: address.country || prev.country,
           address: locationString || prev.address
         }));
+          
+          Alert.alert('Success', `Location set: ${locationString}`);
       } else {
-        // If reverse geocoding fails, just use coordinates
+          // If reverse geocoding doesn't provide complete address, ask for manual entry
+          Alert.alert(
+            'Location Found, Address Needed',
+            `We found your coordinates (${location.coords.latitude.toFixed(4)}, ${location.coords.longitude.toFixed(4)}), but couldn't get a complete address.\n\nPlease enter a complete address manually in the format:\n\nCity, Region/State, Country\n\nExample: Damascus, Damascus Governorate, Syria`,
+            [
+              { text: 'OK', onPress: () => {
         setLocationData({
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
         });
+                addressInputRef.current?.focus();
+              }}
+            ]
+          );
+        }
+      } else {
+        // If reverse geocoding fails, ask for manual entry
+        Alert.alert(
+          'Location Found, Address Needed',
+          `We found your coordinates (${location.coords.latitude.toFixed(4)}, ${location.coords.longitude.toFixed(4)}), but couldn't get an address.\n\nPlease enter a complete address manually in the format:\n\nCity, Region/State, Country\n\nExample: Damascus, Damascus Governorate, Syria`,
+          [
+            { text: 'OK', onPress: () => {
+              setLocationData({
+                latitude: location.coords.latitude,
+                longitude: location.coords.longitude,
+              });
+              locationInputRef.current?.focus();
+            }}
+          ]
+        );
       }
     } catch (error) {
       console.error('Error getting location:', error);
-      Alert.alert('Error', 'Failed to get location. You can enter it manually.');
+      Alert.alert(
+        'Location Error',
+        'Failed to get location automatically. Please enter your address manually.\n\nFormat: City, Region/State, Country\n\nExample: Damascus, Damascus Governorate, Syria',
+        [
+          { text: 'OK', onPress: () => locationInputRef.current?.focus() }
+        ]
+      );
     }
+  };
+
+  const geocodeAddress = async (address) => {
+    if (!address || address.trim().length === 0) {
+      Alert.alert('Error', 'Please enter an address to geocode');
+      return null;
+    }
+
+    // Normalize common typos and abbreviations
+    let normalizedAddress = address.trim();
+    
+    // Fix common country name typos
+    const countryFixes = {
+      'untied states': 'United States',
+      'united state': 'United States',
+      'usa': 'United States',
+      'us': 'United States',
+    };
+    
+    // Fix common state abbreviations (expand them)
+    const stateExpansions = {
+      'ma': 'Massachusetts',
+      'ca': 'California',
+      'ny': 'New York',
+      'tx': 'Texas',
+      'fl': 'Florida',
+      'il': 'Illinois',
+      'pa': 'Pennsylvania',
+      'oh': 'Ohio',
+      'ga': 'Georgia',
+      'nc': 'North Carolina',
+      'mi': 'Michigan',
+      'nj': 'New Jersey',
+      'va': 'Virginia',
+      'wa': 'Washington',
+      'az': 'Arizona',
+      'tn': 'Tennessee',
+      'in': 'Indiana',
+      'mo': 'Missouri',
+      'md': 'Maryland',
+      'wi': 'Wisconsin',
+      'co': 'Colorado',
+      'mn': 'Minnesota',
+      'sc': 'South Carolina',
+      'al': 'Alabama',
+      'la': 'Louisiana',
+      'ky': 'Kentucky',
+      'or': 'Oregon',
+      'ok': 'Oklahoma',
+      'ct': 'Connecticut',
+      'ut': 'Utah',
+      'ia': 'Iowa',
+      'nv': 'Nevada',
+      'ar': 'Arkansas',
+      'ms': 'Mississippi',
+      'ks': 'Kansas',
+      'nm': 'New Mexico',
+      'ne': 'Nebraska',
+      'wv': 'West Virginia',
+      'id': 'Idaho',
+      'hi': 'Hawaii',
+      'nh': 'New Hampshire',
+      'me': 'Maine',
+      'mt': 'Montana',
+      'ri': 'Rhode Island',
+      'de': 'Delaware',
+      'sd': 'South Dakota',
+      'nd': 'North Dakota',
+      'ak': 'Alaska',
+      'vt': 'Vermont',
+      'wy': 'Wyoming',
+      'dc': 'District of Columbia',
+    };
+    
+    // Apply fixes
+    Object.entries(countryFixes).forEach(([wrong, correct]) => {
+      normalizedAddress = normalizedAddress.replace(new RegExp(wrong, 'gi'), correct);
+    });
+    
+    // Try to expand state abbreviations (look for patterns like ", MA," or ", Ma,")
+    Object.entries(stateExpansions).forEach(([abbr, full]) => {
+      const regex = new RegExp(`,\\s*${abbr}\\s*,`, 'gi');
+      normalizedAddress = normalizedAddress.replace(regex, `, ${full},`);
+    });
+    
+    // If address was modified, show a message
+    if (normalizedAddress !== address) {
+      console.log('📍 Normalized address:', address, '→', normalizedAddress);
+    }
+
+    setGeocodingAddress(true);
+    try {
+      // Use Expo Location's forward geocoding to convert address to coordinates
+      const geocodeResults = await Location.geocodeAsync(normalizedAddress);
+      
+      if (geocodeResults && geocodeResults.length > 0) {
+        const result = geocodeResults[0];
+        const { latitude, longitude } = result;
+        
+        // Reverse geocode to get a formatted address
+        const reverseGeocode = await Location.reverseGeocodeAsync({
+          latitude,
+          longitude,
+        });
+        
+        let formattedAddress = normalizedAddress;
+        let city = null;
+        let region = null;
+        let country = null;
+        
+        if (reverseGeocode && reverseGeocode.length > 0) {
+          const addr = reverseGeocode[0];
+          city = addr.city;
+          region = addr.region;
+          country = addr.country;
+          
+          // Build formatted address from reverse geocode
+          const addressParts = [];
+          if (addr.city) addressParts.push(addr.city);
+          if (addr.region) addressParts.push(addr.region);
+          if (addr.country) addressParts.push(addr.country);
+          formattedAddress = addressParts.join(', ');
+        }
+        
+        const locationInfo = {
+          latitude,
+          longitude,
+          address: formattedAddress,
+          city: city,
+          region: region,
+          country: country,
+        };
+        
+        setLocationData(locationInfo);
+        setFormData(prev => ({
+          ...prev,
+          address: formattedAddress,
+          country: country || prev.country
+        }));
+        
+        Alert.alert('Success', `Address found and location set:\n${formattedAddress}`);
+        return locationInfo;
+      } else {
+        // Try with original address if normalized version failed
+        if (normalizedAddress !== address) {
+          console.log('🔄 Trying original address after normalization failed...');
+          const retryResults = await Location.geocodeAsync(address);
+          if (retryResults && retryResults.length > 0) {
+            const result = retryResults[0];
+            const { latitude, longitude } = result;
+            
+            const reverseGeocode = await Location.reverseGeocodeAsync({
+              latitude,
+              longitude,
+            });
+            
+            let formattedAddress = address;
+            if (reverseGeocode && reverseGeocode.length > 0) {
+              const addr = reverseGeocode[0];
+              const addressParts = [];
+              if (addr.city) addressParts.push(addr.city);
+              if (addr.region) addressParts.push(addr.region);
+              if (addr.country) addressParts.push(addr.country);
+              formattedAddress = addressParts.join(', ');
+            }
+            
+            const locationInfo = {
+              latitude,
+              longitude,
+              address: formattedAddress,
+              city: reverseGeocode?.[0]?.city,
+              region: reverseGeocode?.[0]?.region,
+              country: reverseGeocode?.[0]?.country,
+            };
+            
+            setLocationData(locationInfo);
+            setFormData(prev => ({
+              ...prev,
+              address: formattedAddress,
+              country: reverseGeocode?.[0]?.country || prev.country
+            }));
+            
+            Alert.alert('Success', `Address found and location set:\n${formattedAddress}`);
+            return locationInfo;
+          }
+        }
+        
+        Alert.alert(
+          'Address Not Found',
+          'We couldn\'t find that address. Please try:\n\n• Using a more complete address\n• Including city, state/region, and country\n• Checking for spelling errors\n• Using full state names (e.g., "Massachusetts" instead of "MA")\n\nExample: Newton, Massachusetts, United States'
+        );
+        return null;
+      }
+    } catch (error) {
+      console.error('Geocoding error:', error);
+      Alert.alert(
+        'Geocoding Failed',
+        'We couldn\'t process that address. Please try:\n\n• Using a more complete address\n• Including city, state/region, and country\n• Checking your internet connection\n• Using full state names\n\nExample: Newton, Massachusetts, United States'
+      );
+      return null;
+    } finally {
+      setGeocodingAddress(false);
+    }
+  };
+
+  const validateAddress = (address) => {
+    if (!address || address.trim().length === 0) {
+      return { valid: false, message: 'Address cannot be empty' };
+    }
+    
+    // Basic validation - at least 3 characters
+    if (address.trim().length < 3) {
+      return { 
+        valid: false, 
+        message: 'Please enter a more complete address' 
+      };
+    }
+    
+    return { valid: true };
   };
 
   const toggleMode = () => {
@@ -366,39 +686,91 @@ const SignInScreen = ({ navigation, route }) => {
 
                       <View style={styles.inputGroup}>
                         <Text style={styles.label}>Location *</Text>
+                        <Text style={styles.locationHint}>
+                          Enter your charity's address (e.g., "Newton, Massachusetts, United States") and tap "Find Location" to verify
+                        </Text>
                         <View style={styles.locationContainer}>
                           <Pressable 
                             style={styles.locationInput}
-                            onPress={() => countryInputRef.current?.focus()}
+                            onPress={() => locationInputRef.current?.focus()}
                           >
                             <TextInput
-                              ref={countryInputRef}
+                              ref={locationInputRef}
                               style={styles.input}
-                              value={locationData?.address || formData.country}
-                              onChangeText={(value) => handleInputChange('country', value)}
-                              placeholder="e.g., Damascus, Syria or use location button"
+                              value={formData.address}
+                              onChangeText={(value) => {
+                                handleInputChange('address', value);
+                                // Clear location data if user manually edits address
+                                if (locationData && value !== locationData.address) {
+                                  setLocationData(null);
+                                }
+                              }}
+                              placeholder="e.g., Newton, Massachusetts, United States"
                               placeholderTextColor="#9CA3AF"
                               autoCapitalize="words"
                               autoComplete="off"
                               textContentType="none"
-                              spellCheck={false}
-                              autoCorrect={false}
+                              spellCheck={true}
+                              autoCorrect={true}
                               importantForAutofill="no"
-                              returnKeyType="next"
+                              returnKeyType="done"
                               blurOnSubmit={false}
-                              onSubmitEditing={() => missionInputRef.current?.focus()}
+                              onSubmitEditing={async () => {
+                                const address = formData.address.trim();
+                                if (address.length > 0) {
+                                  await geocodeAddress(address);
+                                }
+                              }}
                             />
                           </Pressable>
                           <TouchableOpacity 
                             style={styles.locationButton}
                             onPress={pickLocation}
+                            disabled={geocodingAddress}
                           >
                             <Ionicons name="location" size={20} color="#FFFFFF" />
                           </TouchableOpacity>
                         </View>
-                        {locationData && (
+                        <View style={styles.geocodeButtonContainer}>
+                          <TouchableOpacity
+                            style={[styles.geocodeButton, geocodingAddress && styles.geocodeButtonDisabled]}
+                            onPress={async () => {
+                              const address = formData.address.trim();
+                              if (address.length === 0) {
+                                Alert.alert('No Address', 'Please enter an address first');
+                                locationInputRef.current?.focus();
+                                return;
+                              }
+                              await geocodeAddress(address);
+                            }}
+                            disabled={geocodingAddress}
+                          >
+                            {geocodingAddress ? (
+                              <>
+                                <Ionicons name="hourglass" size={16} color="#FFFFFF" />
+                                <Text style={styles.geocodeButtonText}>Finding...</Text>
+                              </>
+                            ) : (
+                              <>
+                                <Ionicons name="search" size={16} color="#FFFFFF" />
+                                <Text style={styles.geocodeButtonText}>Find Location</Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                        {locationData && locationData.latitude && locationData.longitude && (
                           <Text style={styles.locationInfo}>
-                            📍 Location set: {locationData.address || `${locationData.latitude.toFixed(4)}, ${locationData.longitude.toFixed(4)}`}
+                            ✅ Location verified: {locationData.address || `${locationData.latitude.toFixed(4)}, ${locationData.longitude.toFixed(4)}`}
+                          </Text>
+                        )}
+                        {locationData && (!locationData.latitude || !locationData.longitude) && (
+                          <Text style={styles.locationWarning}>
+                            ⚠️ Address entered but not verified. Tap "Find Location" to get coordinates.
+                          </Text>
+                        )}
+                        {!locationData && formData.address && (
+                          <Text style={styles.locationHint}>
+                            💡 Tap "Find Location" to verify your address and get coordinates
                           </Text>
                         )}
                       </View>
@@ -487,14 +859,17 @@ const SignInScreen = ({ navigation, route }) => {
                       </View>
 
                       <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Address</Text>
+                        <Text style={styles.label}>Additional Address Details (Optional)</Text>
+                        <Text style={styles.locationHint}>
+                          Street address or additional location details (if different from location above)
+                        </Text>
                         <Pressable onPress={() => addressInputRef.current?.focus()}>
                           <TextInput
                             ref={addressInputRef}
                             style={styles.input}
                             value={formData.address}
                             onChangeText={(value) => handleInputChange('address', value)}
-                            placeholder="Enter your charity's address"
+                            placeholder="e.g., 123 Main Street, Building A"
                             placeholderTextColor="#9CA3AF"
                             autoCapitalize="words"
                             autoComplete="off"
@@ -536,7 +911,7 @@ const SignInScreen = ({ navigation, route }) => {
                       </View>
 
                       <View style={styles.inputGroup}>
-                        <Text style={styles.label}>Country</Text>
+                        <Text style={styles.label}>Country *</Text>
                         <Pressable onPress={() => countryInputRef.current?.focus()}>
                           <TextInput
                             ref={countryInputRef}
@@ -1032,6 +1407,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#047857',
     fontStyle: 'italic',
+  },
+  locationHint: {
+    marginTop: 4,
+    marginBottom: 8,
+    fontSize: 12,
+    color: '#6B7280',
+    fontStyle: 'italic',
+  },
+  locationWarning: {
+    color: '#EF4444',
+    fontWeight: '600',
+  },
+  geocodeButtonContainer: {
+    marginTop: 8,
+    alignItems: 'flex-start',
+  },
+  geocodeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#059669',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 8,
+  },
+  geocodeButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+  },
+  geocodeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

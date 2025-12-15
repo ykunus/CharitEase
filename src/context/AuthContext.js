@@ -63,23 +63,80 @@ export const AuthProvider = ({ children }) => {
       }
       
       // First, check if this email exists in charities table (most reliable way to detect charity account)
-      const { data: charityProfile, error: charityCheckError } = await supabase
+      // Use maybeSingle() to avoid throwing error when not found
+      // Normalize email to lowercase for comparison (Supabase queries are case-sensitive)
+      const authEmail = supabaseUser.email;
+      const normalizedEmail = authEmail?.toLowerCase().trim();
+      
+      console.log('🔍 Looking for charity profile with:', {
+        originalEmail: authEmail,
+        normalizedEmail: normalizedEmail
+      });
+      
+      let charityProfile = null;
+      let charityCheckError = null;
+      
+      // Try exact match with normalized email first (this is how we store it)
+      const exactMatchResult = await supabase
           .from('charities')
           .select('*')
-          .eq('email', supabaseUser.email)
-          .single();
+          .eq('email', normalizedEmail)
+          .maybeSingle();
+      
+      charityProfile = exactMatchResult.data;
+      charityCheckError = exactMatchResult.error;
+      
+      // If not found, try with original email case (in case it was stored differently)
+      if (!charityProfile && !charityCheckError && expectedUserType === 'charity') {
+        console.log('🔄 Trying with original email case...');
+        const originalCaseResult = await supabase
+          .from('charities')
+          .select('*')
+          .eq('email', authEmail)
+          .maybeSingle();
+        
+        if (originalCaseResult.data && !originalCaseResult.error) {
+          console.log('✅ Found charity profile with original email case');
+          charityProfile = originalCaseResult.data;
+        }
+      }
 
       // Check if charity profile exists
-      // PGRST116 error means no rows found (expected for non-charity accounts)
-      // We need to check: if we have charityProfile data OR if error is NOT PGRST116 (meaning real error)
-      const charityNotFound = charityCheckError && charityCheckError.code === 'PGRST116';
-      const isCharity = !charityNotFound && charityProfile !== null && charityProfile !== undefined;
+      // maybeSingle() returns null for data and null for error when no rows found
+      // If there's an actual error, charityCheckError will be set
+      let isCharity = !charityCheckError && charityProfile !== null && charityProfile !== undefined;
       
-      console.log('🔍 Charity check result:', { 
-        hasProfile: !!charityProfile, 
+      console.log('🔍 Charity check result (exact match):', { 
+        email: supabaseUser.email,
+        normalizedEmail: normalizedEmail,
+        hasProfile: !!charityProfile,
+        profileId: charityProfile?.id,
+        profileEmail: charityProfile?.email,
         errorCode: charityCheckError?.code,
+        errorMessage: charityCheckError?.message,
         isCharity 
       });
+      
+      // If not found with exact match and we're expecting a charity, try case-insensitive search as fallback
+      if (!isCharity && !charityCheckError && expectedUserType === 'charity') {
+        console.log('🔄 Trying case-insensitive charity search...');
+        const caseInsensitiveResult = await supabase
+          .from('charities')
+          .select('*')
+          .ilike('email', normalizedEmail)
+          .maybeSingle();
+        
+        if (caseInsensitiveResult.data && !caseInsensitiveResult.error) {
+          console.log('✅ Found charity profile with case-insensitive search');
+          charityProfile = caseInsensitiveResult.data;
+          isCharity = true;
+        }
+      }
+      
+      // If there was an actual error (not just "not found"), log it
+      if (charityCheckError && charityCheckError.code !== 'PGRST116') {
+        console.error('❌ Error checking for charity profile:', charityCheckError);
+      }
       
       // Prevent account type mismatch: if expecting a regular user but account is charity
       if (expectedUserType === 'user' && isCharity) {
@@ -92,11 +149,42 @@ export const AuthProvider = ({ children }) => {
         const { data: userProfile } = await supabase
           .from('users')
           .select('user_type')
-          .eq('email', supabaseUser.email)
+          .eq('email', normalizedEmail)
           .maybeSingle();
         
         if (userProfile && userProfile.user_type === 'user') {
           throw new Error('This is a regular user account. Please use the "Sign In as User" option instead.');
+        }
+        
+        // If we're expecting a charity but can't find the charity profile,
+        // do a comprehensive search to help debug
+        if (!userProfile) {
+          console.error('❌ Charity profile not found for email:', supabaseUser.email);
+          console.error('❌ Normalized email searched:', normalizedEmail);
+          
+          // Try to find ANY charity with a similar email (for debugging)
+          const { data: allCharities } = await supabase
+            .from('charities')
+            .select('id, email, name')
+            .limit(10);
+          
+          console.log('🔍 Recent charities in database (for debugging):', 
+            allCharities?.map(c => ({ email: c.email, name: c.name })) || 'none'
+          );
+          
+          // Try one more comprehensive search with ilike
+          const { data: broadSearch } = await supabase
+            .from('charities')
+            .select('id, email, name')
+            .ilike('email', `%${normalizedEmail.split('@')[0]}%`)
+            .limit(5);
+          
+          if (broadSearch && broadSearch.length > 0) {
+            console.log('🔍 Found charities with similar email:', broadSearch);
+            console.error('⚠️ Email mismatch detected! Expected:', normalizedEmail, 'Found:', broadSearch[0].email);
+          }
+          
+          throw new Error(`Charity account not found. The charity profile may not have been created during signup, or there's an email mismatch. Please contact support with your email: ${supabaseUser.email}`);
         }
       }
       
@@ -110,7 +198,7 @@ export const AuthProvider = ({ children }) => {
         const { data: existingUser } = await supabase
           .from('users')
           .select('id, followed_charities, followed_users, user_type')
-          .eq('email', supabaseUser.email)
+          .eq('email', normalizedEmail)
           .maybeSingle(); // Use maybeSingle() to avoid error when not found
         
         if (existingUser && existingUser.user_type === 'charity') {
@@ -267,11 +355,11 @@ export const AuthProvider = ({ children }) => {
         // This means the charity check above failed but we have a charity user entry
         // In this case, we should try to load the charity profile again or throw a helpful error
         
-        // Load regular user profile
+        // Load regular user profile (use normalized email for consistency)
         const { data: profile, error: userError } = await supabase
           .from('users')
           .select('*')
-          .eq('email', supabaseUser.email)
+          .eq('email', normalizedEmail)
           .single();
 
         // Check if user was found (PGRST116 means not found)
@@ -284,11 +372,11 @@ export const AuthProvider = ({ children }) => {
             console.error('⚠️ Found user entry with user_type=charity but charity profile check failed.');
             console.error('⚠️ This indicates the charity profile might be missing or there was an error.');
             
-            // Try one more time to get the charity profile
+            // Try one more time to get the charity profile (use normalized email)
             const { data: retryCharityProfile, error: retryError } = await supabase
               .from('charities')
               .select('*')
-              .eq('email', supabaseUser.email)
+              .eq('email', normalizedEmail)
               .single();
             
             if (retryCharityProfile && !retryError) {
@@ -408,7 +496,7 @@ export const AuthProvider = ({ children }) => {
           const { data: doubleCheckCharity, error: doubleCheckError } = await supabase
             .from('charities')
             .select('id, name, email')
-            .eq('email', supabaseUser.email)
+            .eq('email', normalizedEmail)
             .maybeSingle(); // Use maybeSingle() to avoid error on no rows
           
           if (doubleCheckCharity && !doubleCheckError) {
@@ -558,16 +646,23 @@ export const AuthProvider = ({ children }) => {
           }
           
           // Check for location coordinates
-          const hasValidLat = typeof charity.location_lat === 'number' && charity.location_lat !== 0 && !isNaN(charity.location_lat);
-          const hasValidLon = typeof charity.location_lon === 'number' && charity.location_lon !== 0 && !isNaN(charity.location_lon);
+          // Handle both column names (location_lat/location_lon) and null/undefined values
+          const locationLat = charity.location_lat;
+          const locationLon = charity.location_lon;
           
-          const latitude = hasValidLat ? charity.location_lat : 0;
-          const longitude = hasValidLon ? charity.location_lon : 0;
+          const hasValidLat = typeof locationLat === 'number' && locationLat !== 0 && !isNaN(locationLat) && locationLat !== null;
+          const hasValidLon = typeof locationLon === 'number' && locationLon !== 0 && !isNaN(locationLon) && locationLon !== null;
+          
+          const latitude = hasValidLat ? locationLat : null;
+          const longitude = hasValidLon ? locationLon : null;
           
           if (hasValidLat && hasValidLon) {
             console.log(`✅ Loaded location for ${charity.name}: ${latitude}, ${longitude}`);
           } else {
-            console.log(`⚠️ No valid location for ${charity.name} (lat: ${charity.location_lat}, lon: ${charity.location_lon})`);
+            console.log(`⚠️ No valid location for ${charity.name} (lat: ${locationLat}, lon: ${locationLon})`);
+            if (locationLat === undefined || locationLon === undefined) {
+              console.log(`⚠️ Location columns may not exist. Run migration: add_location_columns_to_charities.sql`);
+            }
           }
           
           return {
@@ -579,8 +674,8 @@ export const AuthProvider = ({ children }) => {
             location: {
               city: city,
               country: charity.country,
-              latitude: latitude,
-              longitude: longitude
+              latitude: latitude || null, // Use null instead of 0 for missing locations
+              longitude: longitude || null // Use null instead of 0 for missing locations
             },
             founded: charity.founded_year,
             verified: charity.verified,
@@ -597,7 +692,65 @@ export const AuthProvider = ({ children }) => {
           };
         });
         
-        setCharitiesData(formattedCharities);
+        // Merge with existing charities data to preserve location data stored in local state
+        // (in case location columns don't exist in database yet)
+        setCharitiesData(prev => {
+          const prevMap = new Map(prev.map(c => [c.id, c]));
+          const merged = formattedCharities.map(dbCharity => {
+            const existing = prevMap.get(dbCharity.id);
+            // If database doesn't have location but local state does, preserve it
+            if (existing && 
+                existing.location && 
+                existing.location.latitude != null && 
+                existing.location.longitude != null &&
+                existing.location.latitude !== 0 &&
+                existing.location.longitude !== 0 &&
+                (!dbCharity.location.latitude || 
+                 dbCharity.location.latitude === 0 || 
+                 dbCharity.location.latitude === null ||
+                 !dbCharity.location.longitude ||
+                 dbCharity.location.longitude === 0 ||
+                 dbCharity.location.longitude === null)) {
+              console.log(`🔄 Preserving location for ${dbCharity.name} from local state (DB: ${dbCharity.location.latitude}, ${dbCharity.location.longitude} -> Local: ${existing.location.latitude}, ${existing.location.longitude})`);
+              return {
+                ...dbCharity,
+                location: existing.location // Preserve location from local state
+              };
+            }
+            return dbCharity;
+          });
+          
+          // Add any charities from local state that aren't in database (newly created charities)
+          const dbIds = new Set(merged.map(c => c.id));
+          const localOnly = prev.filter(c => {
+            if (!dbIds.has(c.id)) {
+              console.log(`➕ Keeping charity "${c.name}" from local state (not in DB yet or just created)`);
+              if (c.location?.latitude && c.location?.longitude) {
+                console.log(`   📍 With location: ${c.location.latitude}, ${c.location.longitude}`);
+              }
+              return true;
+            }
+            return false;
+          });
+          
+          const result = [...merged, ...localOnly];
+          console.log(`📊 Charity merge complete: ${merged.length} from DB + ${localOnly.length} from local = ${result.length} total`);
+          
+          // Log charities with locations for debugging
+          const withLocations = result.filter(c => 
+            c.location?.latitude != null && 
+            c.location?.longitude != null &&
+            c.location.latitude !== 0 &&
+            c.location.longitude !== 0
+          );
+          console.log(`📍 Charities with valid locations: ${withLocations.length}`);
+          withLocations.forEach(c => {
+            console.log(`   - ${c.name}: ${c.location.latitude}, ${c.location.longitude}`);
+          });
+          
+          return result;
+        });
+        
         console.log(`✅ Loaded ${formattedCharities.length} charities from database`);
       } else {
         console.log('ℹ️ No charities found in database');
@@ -787,7 +940,9 @@ export const AuthProvider = ({ children }) => {
         country,
         userType,
             ...additionalData
-          }
+          },
+          // Disable email confirmation for now (can be enabled in Supabase settings)
+          emailRedirectTo: undefined
         }
       });
 
@@ -801,6 +956,19 @@ export const AuthProvider = ({ children }) => {
       }
 
       console.log('✅ Supabase auth user created');
+      console.log('📧 User email:', authData.user.email);
+      console.log('🔐 Session created:', !!authData.session);
+      
+      // If no session was created, it means email confirmation is enabled in Supabase
+      // For development, you should disable email confirmation in Supabase Dashboard:
+      // Authentication → Settings → "Enable email confirmations" → OFF
+      if (!authData.session) {
+        console.error('❌ No session created after signup!');
+        console.error('❌ Email confirmation is likely enabled in Supabase settings');
+        console.error('❌ To fix: Go to Supabase Dashboard → Authentication → Settings');
+        console.error('❌ Turn OFF "Enable email confirmations"');
+        throw new Error('Account created but email confirmation is required. Please disable email confirmation in Supabase settings, or check your email to confirm your account.');
+      }
 
       // Create profile based on user type
       if (userType === 'charity') {
@@ -821,8 +989,27 @@ export const AuthProvider = ({ children }) => {
           console.log('⚠️ No location data provided for charity signup');
         }
         
+        // Use the email from Supabase Auth to ensure exact match
+        // Supabase Auth may normalize emails, but we'll normalize it ourselves for consistency
+        const authEmail = authData.user.email;
+        if (!authEmail) {
+          throw new Error('No email address provided by authentication');
+        }
+        
+        // Normalize email to lowercase for consistent storage and queries
+        const normalizedEmail = authEmail.toLowerCase().trim();
+        
+        console.log('📧 Email from signup form:', email);
+        console.log('📧 Email from Supabase Auth:', authEmail);
+        console.log('📧 Normalized email for storage:', normalizedEmail);
+        
+        // Ensure we have a valid email
+        if (!normalizedEmail || !normalizedEmail.includes('@')) {
+          throw new Error('Invalid email address from authentication: ' + authEmail);
+        }
+        
         const charityProfile = {
-          email: email,
+          email: normalizedEmail, // Always store normalized to ensure consistency
           name: additionalData.charityName || name,
           category: additionalData.category || 'Education',
           country: country,
@@ -839,6 +1026,8 @@ export const AuthProvider = ({ children }) => {
           impact: {}
           // posts field removed - not a column in charities table
         };
+        
+        console.log('📝 Creating charity profile with email:', normalizedEmail);
         
         // Try to insert with location coordinates if available and columns exist
         let charity = null;
@@ -900,11 +1089,95 @@ export const AuthProvider = ({ children }) => {
         }
 
         if (charityError) {
-          console.error('Charity profile creation error:', charityError);
+          console.error('❌ Charity profile creation error:', charityError);
+          console.error('❌ Charity profile data attempted:', {
+            email: normalizedEmail,
+            name: charityProfile.name,
+            category: charityProfile.category
+          });
           throw new Error('Failed to create charity profile: ' + charityError.message);
         }
 
+        if (!charity || !charity.id) {
+          console.error('❌ Charity profile creation returned no data!');
+          throw new Error('Charity profile creation failed - no data returned from database');
+        }
+
         console.log('✅ Charity profile created in database');
+        console.log('📧 Charity profile ID:', charity.id);
+        console.log('📧 Charity profile email:', charity.email);
+        console.log('📧 Charity profile name:', charity.name);
+        console.log('📧 Auth user email:', authData.user.email);
+        
+        // Verify the charity profile was created and can be found
+        // Add a small delay to ensure database consistency
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        // Try multiple verification attempts
+        let verifyCharity = null;
+        let verifyError = null;
+        
+        for (let verifyAttempt = 1; verifyAttempt <= 3; verifyAttempt++) {
+          console.log(`🔍 Verification attempt ${verifyAttempt}/3...`);
+          const verifyResult = await supabase
+            .from('charities')
+            .select('id, email, name')
+            .eq('id', charity.id) // Query by ID first (most reliable)
+            .maybeSingle();
+          
+          if (verifyResult.data && !verifyResult.error) {
+            verifyCharity = verifyResult.data;
+            console.log(`✅ Verified charity profile by ID on attempt ${verifyAttempt}`);
+            break;
+          }
+          
+          // If ID lookup fails, try email lookup
+          const emailVerifyResult = await supabase
+            .from('charities')
+            .select('id, email, name')
+            .eq('email', normalizedEmail)
+            .maybeSingle();
+          
+          if (emailVerifyResult.data && !emailVerifyResult.error) {
+            verifyCharity = emailVerifyResult.data;
+            console.log(`✅ Verified charity profile by email on attempt ${verifyAttempt}`);
+            break;
+          }
+          
+          verifyError = emailVerifyResult.error || verifyResult.error;
+          
+          if (verifyAttempt < 3) {
+            await new Promise(resolve => setTimeout(resolve, 200 * verifyAttempt));
+          }
+        }
+        
+        if (!verifyCharity) {
+          console.error('❌ Charity profile not found after creation!');
+          console.error('❌ Charity ID created:', charity.id);
+          console.error('❌ Email searched:', normalizedEmail);
+          console.error('❌ Auth user email:', authData.user.email);
+          console.error('❌ Verification error:', verifyError);
+          
+          // Last resort: query by ID directly
+          const { data: directQuery } = await supabase
+            .from('charities')
+            .select('*')
+            .eq('id', charity.id)
+            .single();
+          
+          if (directQuery) {
+            console.log('✅ Found charity with direct ID query:', directQuery.email);
+            verifyCharity = directQuery;
+          } else {
+            throw new Error('Charity profile was created but cannot be verified. Please try signing in - your account may still work.');
+          }
+        } else {
+          console.log('✅ Verified charity profile exists:', {
+            id: verifyCharity.id,
+            name: verifyCharity.name,
+            email: verifyCharity.email
+          });
+        }
         
         // NOTE: We do NOT create a user entry here during sign-up
         // User entries are only created when needed (e.g., when charity tries to like/comment)
@@ -963,27 +1236,76 @@ export const AuthProvider = ({ children }) => {
                 posts: []
               };
               
-              // Update local state with location
+              // Update local state with location (this will be used until migration is run)
               setCharitiesData(prev => {
+                console.log(`🔄 Updating charities list. Current count: ${prev.length}`);
                 const existing = prev.find(c => c.id === charity.id);
                 if (existing) {
-                  return prev.map(c => c.id === charity.id ? charityWithLocation : c);
+                  // Update existing charity with location
+                  const updated = prev.map(c => c.id === charity.id ? charityWithLocation : c);
+                  console.log(`✅ Updated charity "${charity.name}" with location in local state`);
+                  console.log(`📍 Updated location: ${charityWithLocation.location.latitude}, ${charityWithLocation.location.longitude}`);
+                  console.log(`📊 Total charities after update: ${updated.length}`);
+                  return updated;
+                } else {
+                  // Add new charity with location
+                  const newList = [...prev, charityWithLocation];
+                  console.log(`✅ Added new charity "${charity.name}" with location to local state`);
+                  console.log(`📍 Location: ${charityWithLocation.location.latitude}, ${charityWithLocation.location.longitude}`);
+                  console.log(`📊 Total charities after add: ${newList.length}`);
+                  console.log(`🗺️ Charity should now appear on map if within search radius`);
+                  return newList;
                 }
-                return [...prev, charityWithLocation];
               });
               
               console.log('✅ Added charity with location to local state (temporary until migration is run)');
-              return; // Don't reload from database since we just updated local state
+              console.log('📍 Location:', charityWithLocation.location.latitude, charityWithLocation.location.longitude);
+              console.log('⚠️ IMPORTANT: Run the migration script to add location_lat and location_lon columns to the database');
+              console.log('⚠️ Until then, location is stored in local state only');
+              
+              // Don't reload from database here - it would overwrite the location we just added
+              // The charity with location is already in local state above
+              // We'll reload after signup completes to get any other updates
             } else {
               console.log('⚠️ Could not update charity location:', updateError.message);
             }
           } else {
             console.log('✅ Successfully saved location to database');
+            // Reload charities from database to ensure we have the latest data with location
+            await loadCharitiesFromDatabase();
+            
+            // Verify the charity is in the list with location
+            setCharitiesData(prev => {
+              const charityInList = prev.find(c => c.id === charity.id);
+              if (charityInList) {
+                console.log(`✅ Charity "${charity.name}" verified in charities list`);
+                if (charityInList.location?.latitude && charityInList.location?.longitude) {
+                  console.log(`✅ Charity has location: ${charityInList.location.latitude}, ${charityInList.location.longitude}`);
+                  console.log(`🗺️ Charity should appear on map if within search radius`);
+                } else {
+                  console.log(`⚠️ Charity is in list but has no location data`);
+                }
+              } else {
+                console.error(`❌ Charity "${charity.name}" NOT found in charities list after reload!`);
+              }
+              return prev;
+            });
           }
+        } else {
+          // No location data provided, but still reload charities to get latest data
+          await loadCharitiesFromDatabase();
+          
+          // Verify the charity is in the list (even without location)
+          setCharitiesData(prev => {
+            const charityInList = prev.find(c => c.id === charity.id);
+            if (charityInList) {
+              console.log(`✅ Charity "${charity.name}" verified in charities list (no location provided)`);
+            } else {
+              console.error(`❌ Charity "${charity.name}" NOT found in charities list after reload!`);
+            }
+            return prev;
+          });
         }
-        
-        // Reload charities from database to ensure we have the latest data
-        await loadCharitiesFromDatabase();
       } else {
         // Create user profile
         // Handle avatar URL - use provided avatarUrl or default
@@ -1015,12 +1337,70 @@ export const AuthProvider = ({ children }) => {
         console.log('✅ User profile created in database');
       }
 
-      // Load the user profile
-      await loadUserProfile(authData.user);
-      setIsConnected(true);
-
-      console.log('✅ Account created successfully!');
-      return { user: authData.user };
+      // Load the user profile (session should always exist if email confirmation is disabled)
+      // For charity accounts, we need to retry a few times in case of database replication delay
+      try {
+        if (userType === 'charity') {
+          // For charity accounts, retry loading the profile a few times
+          // This handles potential database replication delays
+          let profileLoaded = false;
+          let lastError = null;
+          
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              console.log(`🔄 Attempting to load charity profile (attempt ${attempt}/3)...`);
+              await loadUserProfile(authData.user, userType);
+              profileLoaded = true;
+              console.log(`✅ Charity profile loaded successfully on attempt ${attempt}`);
+              break;
+            } catch (retryError) {
+              console.error(`❌ Attempt ${attempt} failed:`, retryError.message);
+              lastError = retryError;
+              
+              if (attempt < 3) {
+                // Wait a bit before retrying (exponential backoff)
+                const delay = attempt * 200; // 200ms, 400ms
+                console.log(`⏳ Waiting ${delay}ms before retry...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+              }
+            }
+          }
+          
+          if (!profileLoaded) {
+            // Final attempt: try to manually verify the charity exists
+            const authEmail = authData.user.email;
+            const normalizedEmail = authEmail?.toLowerCase().trim();
+            
+            console.log('🔍 Final verification: checking if charity profile exists...');
+            const { data: finalCheck } = await supabase
+              .from('charities')
+              .select('id, email, name')
+              .eq('email', normalizedEmail)
+              .maybeSingle();
+            
+            if (finalCheck) {
+              console.log('✅ Charity profile exists in database, but loadUserProfile failed');
+              console.log('📧 Charity email:', finalCheck.email);
+              console.log('📧 Auth email:', authEmail);
+              throw new Error('Charity account was created successfully, but there was an issue loading your profile. Please try signing in - your account should work now.');
+            } else {
+              console.error('❌ Charity profile not found in database after all attempts');
+              throw new Error('Charity account was created, but the profile could not be found. Please try signing in, or contact support if the problem persists.');
+            }
+          }
+        } else {
+          // For regular users, just load normally
+          await loadUserProfile(authData.user, userType);
+        }
+        
+        setIsConnected(true);
+        console.log('✅ Account created successfully and user is signed in!');
+        
+        return { user: authData.user };
+      } catch (profileError) {
+        console.error('❌ Error loading user profile after signup:', profileError);
+        throw profileError;
+      }
     } catch (error) {
       console.error('Signup error:', error);
       throw error;
@@ -1468,71 +1848,91 @@ export const AuthProvider = ({ children }) => {
     // Create it on-demand if it doesn't exist (lazy creation)
     let actualUserId = userId;
     
-    if (user.userType === 'charity' && !user.dbId) {
-      // Charity doesn't have a user entry yet - create one on-demand
-      console.log('ℹ️ Charity account needs user entry for likes/comments, creating one...');
-      
+    if (user.userType === 'charity') {
+      // First, check if user entry already exists to avoid duplicates
       try {
-        // Get charity profile to get name, logo, etc.
-        const { data: charityProfile } = await supabase
-          .from('charities')
-          .select('name, country, logo_url, email')
+        const { data: existingUserEntry } = await supabase
+          .from('users')
+          .select('id')
           .eq('email', user.email)
-          .single();
+          .eq('user_type', 'charity')
+          .maybeSingle();
         
-        if (charityProfile) {
-          // Create user entry for charity
-          const { data: newUserEntry, error: createError } = await supabase
-            .from('users')
-            .insert([{
-              email: user.email,
-              name: charityProfile.name,
-              country: charityProfile.country,
-              user_type: 'charity',
-              avatar_url: charityProfile.logo_url,
-              total_donated: 0,
-              total_donations: 0,
-              followed_charities: []
-            }])
-            .select('id')
-            .single();
+        if (existingUserEntry) {
+          // User entry already exists - use it
+          actualUserId = existingUserEntry.id;
+          // Update user state with the dbId if not already set
+          if (!user.dbId || user.dbId !== existingUserEntry.id) {
+            setUser(prev => prev ? { ...prev, dbId: existingUserEntry.id, id: existingUserEntry.id } : prev);
+            console.log('✅ Found existing user entry for charity');
+          }
+        } else if (!user.dbId) {
+          // No user entry exists and dbId is not set - create one on-demand
+          console.log('ℹ️ Charity account needs user entry for likes/comments, creating one...');
           
-          if (createError) {
-            // If duplicate key error, fetch existing entry
-            if (createError.code === '23505') {
-              console.log('⚠️ User entry already exists, fetching...');
-              const { data: existingUser } = await supabase
-                .from('users')
-                .select('id')
-                .eq('email', user.email)
-                .eq('user_type', 'charity')
-                .single();
-              
-              if (existingUser) {
-                actualUserId = existingUser.id;
-                // Update user state with the new dbId
-                setUser(prev => prev ? { ...prev, dbId: existingUser.id, id: existingUser.id } : prev);
-                console.log('✅ Found existing user entry for charity');
+          // Get charity profile to get name, logo, etc.
+          const { data: charityProfile } = await supabase
+            .from('charities')
+            .select('name, country, logo_url, email')
+            .eq('email', user.email)
+            .maybeSingle();
+          
+          if (charityProfile) {
+            // Create user entry for charity
+            const { data: newUserEntry, error: createError } = await supabase
+              .from('users')
+              .insert([{
+                email: user.email,
+                name: charityProfile.name,
+                country: charityProfile.country,
+                user_type: 'charity',
+                avatar_url: charityProfile.logo_url,
+                total_donated: 0,
+                total_donations: 0,
+                followed_charities: []
+              }])
+              .select('id')
+              .single();
+            
+            if (createError) {
+              // If duplicate key error (shouldn't happen since we checked, but handle it)
+              if (createError.code === '23505') {
+                console.log('⚠️ User entry was created by another process, fetching...');
+                const { data: existingUser } = await supabase
+                  .from('users')
+                  .select('id')
+                  .eq('email', user.email)
+                  .eq('user_type', 'charity')
+                  .maybeSingle();
+                
+                if (existingUser) {
+                  actualUserId = existingUser.id;
+                  setUser(prev => prev ? { ...prev, dbId: existingUser.id, id: existingUser.id } : prev);
+                  console.log('✅ Found existing user entry for charity');
+                } else {
+                  console.error('❌ Could not create or find user entry for charity:', createError);
+                  return;
+                }
               } else {
-                console.error('❌ Could not create or find user entry for charity:', createError);
+                console.error('❌ Failed to create user entry for charity:', createError);
                 return;
               }
-            } else {
-              console.error('❌ Failed to create user entry for charity:', createError);
-              return;
+            } else if (newUserEntry) {
+              actualUserId = newUserEntry.id;
+              // Update user state with the new dbId
+              setUser(prev => prev ? { ...prev, dbId: newUserEntry.id, id: newUserEntry.id } : prev);
+              console.log('✅ Created user entry for charity (enables likes/comments)');
             }
-          } else if (newUserEntry) {
-            actualUserId = newUserEntry.id;
-            // Update user state with the new dbId
-            setUser(prev => prev ? { ...prev, dbId: newUserEntry.id, id: newUserEntry.id } : null);
-            console.log('✅ Created user entry for charity (enables likes/comments)');
+          } else {
+            console.error('❌ Could not find charity profile');
+            return;
           }
         } else {
-          console.error('❌ Could not find charity profile');
-          return;
+          // User has dbId, use it
+          actualUserId = user.dbId;
         }
       } catch (createErr) {
-        console.error('❌ Error creating user entry for charity:', createErr);
+        console.error('❌ Error checking/creating user entry for charity:', createErr);
         return;
       }
     } else {
@@ -1624,69 +2024,89 @@ export const AuthProvider = ({ children }) => {
     // For charities, ensure they have a user entry for comments (lazy creation)
     let actualUserId = user.id;
     
-    if (user.userType === 'charity' && !user.dbId) {
-      // Charity doesn't have a user entry yet - create one on-demand
-      console.log('ℹ️ Charity account needs user entry for comments, creating one...');
-      
+    if (user.userType === 'charity') {
+      // First, check if user entry already exists to avoid duplicates
       try {
-        // Get charity profile to get name, logo, etc.
-        const { data: charityProfile } = await supabase
-          .from('charities')
-          .select('name, country, logo_url, email')
+        const { data: existingUserEntry } = await supabase
+          .from('users')
+          .select('id')
           .eq('email', user.email)
-          .single();
+          .eq('user_type', 'charity')
+          .maybeSingle();
         
-        if (charityProfile) {
-          // Create user entry for charity
-          const { data: newUserEntry, error: createError } = await supabase
-            .from('users')
-            .insert([{
-              email: user.email,
-              name: charityProfile.name,
-              country: charityProfile.country,
-              user_type: 'charity',
-              avatar_url: charityProfile.logo_url,
-              total_donated: 0,
-              total_donations: 0,
-              followed_charities: []
-            }])
-            .select('id')
-            .single();
+        if (existingUserEntry) {
+          // User entry already exists - use it
+          actualUserId = existingUserEntry.id;
+          // Update user state with the dbId if not already set
+          if (!user.dbId || user.dbId !== existingUserEntry.id) {
+            setUser(prev => prev ? { ...prev, dbId: existingUserEntry.id, id: existingUserEntry.id } : prev);
+            console.log('✅ Found existing user entry for charity');
+          }
+        } else if (!user.dbId) {
+          // No user entry exists and dbId is not set - create one on-demand
+          console.log('ℹ️ Charity account needs user entry for comments, creating one...');
           
-          if (createError) {
-            // If duplicate key error, fetch existing entry
-            if (createError.code === '23505') {
-              console.log('⚠️ User entry already exists, fetching...');
-              const { data: existingUser } = await supabase
-                .from('users')
-                .select('id')
-                .eq('email', user.email)
-                .eq('user_type', 'charity')
-                .single();
-              
-              if (existingUser) {
-                actualUserId = existingUser.id;
-                // Update user state with the new dbId
-                setUser(prev => prev ? { ...prev, dbId: existingUser.id, id: existingUser.id } : prev);
-                console.log('✅ Found existing user entry for charity');
+          // Get charity profile to get name, logo, etc.
+          const { data: charityProfile } = await supabase
+            .from('charities')
+            .select('name, country, logo_url, email')
+            .eq('email', user.email)
+            .maybeSingle();
+          
+          if (charityProfile) {
+            // Create user entry for charity
+            const { data: newUserEntry, error: createError } = await supabase
+              .from('users')
+              .insert([{
+                email: user.email,
+                name: charityProfile.name,
+                country: charityProfile.country,
+                user_type: 'charity',
+                avatar_url: charityProfile.logo_url,
+                total_donated: 0,
+                total_donations: 0,
+                followed_charities: []
+              }])
+              .select('id')
+              .single();
+            
+            if (createError) {
+              // If duplicate key error (shouldn't happen since we checked, but handle it)
+              if (createError.code === '23505') {
+                console.log('⚠️ User entry was created by another process, fetching...');
+                const { data: existingUser } = await supabase
+                  .from('users')
+                  .select('id')
+                  .eq('email', user.email)
+                  .eq('user_type', 'charity')
+                  .maybeSingle();
+                
+                if (existingUser) {
+                  actualUserId = existingUser.id;
+                  setUser(prev => prev ? { ...prev, dbId: existingUser.id, id: existingUser.id } : prev);
+                  console.log('✅ Found existing user entry for charity');
+                } else {
+                  throw new Error('Could not create or find user entry for charity');
+                }
               } else {
-                throw new Error('Could not create or find user entry for charity');
+                throw new Error('Failed to create user entry for charity: ' + createError.message);
               }
-            } else {
-              throw new Error('Failed to create user entry for charity: ' + createError.message);
+            } else if (newUserEntry) {
+              actualUserId = newUserEntry.id;
+              // Update user state with the new dbId
+              setUser(prev => prev ? { ...prev, dbId: newUserEntry.id, id: newUserEntry.id } : prev);
+              console.log('✅ Created user entry for charity (enables comments)');
             }
-          } else if (newUserEntry) {
-            actualUserId = newUserEntry.id;
-            // Update user state with the new dbId
-            setUser(prev => prev ? { ...prev, dbId: newUserEntry.id, id: newUserEntry.id } : null);
-            console.log('✅ Created user entry for charity (enables comments)');
+          } else {
+            throw new Error('Could not find charity profile');
           }
         } else {
-          throw new Error('Could not find charity profile');
+          // User has dbId, use it
+          actualUserId = user.dbId;
         }
       } catch (createErr) {
-        console.error('❌ Error creating user entry for charity:', createErr);
-        throw new Error('Failed to set up charity account for commenting');
+        console.error('❌ Error checking/creating user entry for charity:', createErr);
+        throw new Error('Failed to set up charity account for commenting: ' + createErr.message);
       }
     }
 

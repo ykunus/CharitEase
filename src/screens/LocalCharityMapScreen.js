@@ -114,19 +114,30 @@ const LocalCharityMapScreen = ({ route, navigation }) => {
   }, [currentLocation, radius]);
 
   const nearbyCharities = useMemo(() => {
-    if (!currentLocation?.latitude || !currentLocation?.longitude) return [];
+    if (!currentLocation?.latitude || !currentLocation?.longitude) {
+      console.log('⚠️ Map: No current location available');
+      return [];
+    }
 
-    return charitiesData
+    console.log(`🗺️ Map: Checking ${charitiesData.length} charities for nearby locations...`);
+    console.log(`📍 Current location: ${currentLocation.latitude}, ${currentLocation.longitude}`);
+    console.log(`📏 Search radius: ${radius} miles`);
+
+    const charitiesWithLocation = charitiesData.filter(c => {
+      const lat = c.location?.latitude;
+      const lon = c.location?.longitude;
+      return lat != null && lon != null && 
+             typeof lat === 'number' && typeof lon === 'number' &&
+             !(lat === 0 && lon === 0) &&
+             !isNaN(lat) && !isNaN(lon);
+    });
+
+    console.log(`✅ Found ${charitiesWithLocation.length} charities with valid locations`);
+
+    const nearby = charitiesWithLocation
       .map((charity) => {
-        const latitude = charity.location?.latitude;
-        const longitude = charity.location?.longitude;
-
-        // Filter out invalid locations (not a number, or exactly 0,0 which is in the ocean)
-        if (typeof latitude !== 'number' || typeof longitude !== 'number' || 
-            (latitude === 0 && longitude === 0) || 
-            isNaN(latitude) || isNaN(longitude)) {
-          return null;
-        }
+        const latitude = charity.location.latitude;
+        const longitude = charity.location.longitude;
 
         const distanceKm = calculateDistanceKm(currentLocation, { latitude, longitude });
         const distance = kmToMiles(distanceKm);
@@ -141,6 +152,15 @@ const LocalCharityMapScreen = ({ route, navigation }) => {
       })
       .filter(Boolean)
       .sort((a, b) => a.distance - b.distance);
+
+    console.log(`✅ Found ${nearby.length} charities within ${radius} miles`);
+    if (nearby.length > 0) {
+      nearby.forEach(c => {
+        console.log(`  - ${c.name}: ${c.distance.toFixed(1)} miles away`);
+      });
+    }
+
+    return nearby;
   }, [charitiesData, currentLocation, radius]);
 
   const handleLocatePress = useCallback(async () => {
