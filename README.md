@@ -17,3 +17,10 @@ The app also makes it easy for charities and non-profits to keep track of income
 **Authors**
 
 ChariEase was developed by Fitz Wangaru, Yunus Kocaman, and Jameer Gomez-Santos in collaboration with senior software developer, Mojtaba Fazeli, for COSI-166.
+
+**Tech Stack**
+The React Native and Expo frameworks makes up the base of the app.
+The Stripe API is used to process payments securly.
+Supabase is used as a database in order to store user and chartiy infromation.
+The Google Maps API is used to keep track of clothing donation drop off points in the U.S
+
